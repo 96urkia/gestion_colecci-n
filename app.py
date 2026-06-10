@@ -75,8 +75,8 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     # 1. Procesar Topográfico
     topo_text = topo_bytes.decode('utf-8', errors='replace')
     data = []
-    for line in topo_text.split('
-'):
+    for line in topo_text.split(' 
+    '):
         line = line.strip()
         if not line or re.search(r'^(LISTADO|Signatura|-----)', line):
             continue
