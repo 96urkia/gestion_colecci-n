@@ -1,10 +1,4 @@
-¡Me parece una idea fantástica! Añadir iconos visuales (emojis) y cambiar la orientación a vertical le va a dar un aspecto de **Dashboard (Panel de Control)** mucho más profesional y fácil de leer.
 
-Para que todo encaje a la perfección, he rediseñado la disposición de los resultados: he dividido la pantalla en **tres grandes columnas**. En la primera columna de la izquierda aparecerán tus 5 métricas apiladas verticalmente con sus respectivos iconos. En las otras dos columnas de la derecha he colocado los gráficos para que quede todo integrado en un solo "golpe de vista".
-
-Aquí tienes el código actualizado. Cópialo y sustitúyelo:
-
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
