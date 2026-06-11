@@ -34,7 +34,6 @@ st.markdown("""
         color: #4B5563;
         margin-bottom: 2rem;
     }
-    /* Estilo para darle un poco de aire a las métricas verticales */
     div[data-testid="metric-container"] {
         margin-bottom: 1rem;
     }
@@ -53,16 +52,13 @@ if 'analizado' not in st.session_state:
 # ==========================================
 st.header("🏢 1. Selección de Biblioteca y Carga de Archivos")
 
-# Selector de biblioteca basado en el diccionario del Backend
 biblioteca_seleccionada = st.selectbox(
     "Selecciona la biblioteca para el análisis:",
     options=list(BIBLIOTECAS.keys()),
     help="Determina la biblioteca activa y carga su población atendida."
 )
-# Extraemos el valor del diccionario según la selección
 poblacion_atendida = BIBLIOTECAS[biblioteca_seleccionada]
 
-# Distribución de la carga de archivos en 2 columnas en la página principal
 col_up1, col_up2 = st.columns(2)
 
 with col_up1:
@@ -93,7 +89,6 @@ else:
 
 st.sidebar.markdown("---")
 
-# EL BOTÓN AZUL DE ANÁLISIS
 if st.sidebar.button("🚀 Analizar Fondos", type="primary"):
     st.session_state['analizado'] = True
 
@@ -107,13 +102,17 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         
     topo_text = topo_bytes.decode('utf-8', errors='replace')
     data = []
+    
+    # 1. LECTURA ESTRICTA DEL TOPOGRÁFICO (Define el 100% de la colección)
     for line in topo_text.split('\n'):
         line = line.strip()
-        if not line or re.search(r'^(LISTADO|Signatura|-----)', line):
+        # Filtramos cabeceras de Absys y fechas de impresión
+        if not line or re.search(r'^(\d{2}/\d{2}/\d{4}|LISTADO|Signatura|-----)', line):
             continue
         match = re.search(r'\b(\d{7,})\b', line)
         if not match:
             continue
+            
         record_id = int(match.group(1))
         sign_match = re.search(r'(.+?)\s+84\s+[A-Z]{2}', line)
         signatura = sign_match.group(1).strip() if sign_match else line
@@ -122,6 +121,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     df = pd.DataFrame(data)
     if df.empty: return None
 
+    # 2. CRUCE DE PRÉSTAMOS (Solo se actualizan los IDs que existen en el df)
     df['prestamos'] = 1
     
     if nunca_bytes:
@@ -136,8 +136,13 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         
     df['prestado'] = df['prestamos'] > 0
 
+    # 3. EXTRACCIÓN DE AÑOS CON LIMPIEZA DE FECHAS ABSYS
     if catalogo_bytes:
         cat_text = catalogo_bytes.decode('utf-8', errors='replace')
+        
+        # ELIMINAMOS fechas tipo 08/06/2026 para que no se interpreten como año de edición
+        cat_text = re.sub(r'\b\d{2}/\d{2}/\d{4}\b', '', cat_text)
+        
         year_dict = {}
         matches = list(re.finditer(r'\b\d{7,}\b', cat_text))
         for i, m in enumerate(matches):
@@ -145,14 +150,17 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
             start = m.start()
             end = matches[i+1].start() if i < len(matches)-1 else len(cat_text)
             block = cat_text[start:end]
+            
             years = re.findall(r'\b(18\d{2}|19\d{2}|20\d{2})\b', block)
             years = [int(y) for y in years if 1800 <= int(y) <= 2026]
             if years:
                 year_dict[rid] = max(years)
+                
         df['year'] = df['record_id'].map(year_dict)
     else:
         df['year'] = np.nan
 
+    # 4. CLASIFICACIÓN
     def clasificar_dinamico(sign):
         if not sign: return "Sin clasificar"
         s = str(sign).upper().strip()
@@ -211,7 +219,6 @@ if st.session_state['analizado']:
             edad_media = df_completo['year'].mean()
             docs_por_habitante = total_docs / poblacion_atendida if poblacion_atendida > 0 else 0
             
-            # NUEVO LAYOUT: 1 Columna para métricas (izquierda), 2 para gráficos (derecha)
             col_metricas, col_pie, col_hist = st.columns([1, 1.5, 1.5])
             
             # MÉTRICAS VERTICALES CON ICONOS
@@ -231,7 +238,6 @@ if st.session_state['analizado']:
                 fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', 
                                  color_discrete_sequence=px.colors.qualitative.Pastel)
                 fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                # Ajustamos márgenes para que encaje mejor visualmente
                 fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20))
                 st.plotly_chart(fig_pie, use_container_width=True)
                 
