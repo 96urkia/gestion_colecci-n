@@ -12,6 +12,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ==========================================
+# BACKEND: DICCIONARIO DE BIBLIOTECAS
+# ==========================================
+# Aquí puedes ir ampliando el listado en el futuro siguiendo el mismo formato
+BIBLIOTECAS = {
+    "Monteagudo": 1100,
+    # "Ejemplo Biblioteca 2": 5000,
+}
+
 # Estilo personalizado
 st.markdown("""
     <style>
@@ -37,16 +46,35 @@ if 'analizado' not in st.session_state:
     st.session_state['analizado'] = False
 
 # ==========================================
-# BARRA LATERAL: CONFIGURACIÓN Y CARGA
+# PÁGINA PRINCIPAL: SELECCIÓN Y CARGA DE DATOS
 # ==========================================
-st.sidebar.header("📥 1. Carga de Archivos")
+st.header("🏢 1. Selección de Biblioteca y Carga de Archivos")
 
-uploaded_topo = st.sidebar.file_uploader("Archivo Topográfico (.txt)", type=["txt"], help="Listado topográfico exportado de Absys")
-uploaded_nunca = st.sidebar.file_uploader("No Prestados (.txt)", type=["txt"], help="Listado de códigos/IDs que nunca se han prestado")
-uploaded_mas2 = st.sidebar.file_uploader("Más Prestados (.txt)", type=["txt"], help="Listado de códigos/IDs con más préstamos")
-uploaded_catalogo = st.sidebar.file_uploader("Catálogo Completo (.txt)", type=["txt"], help="Catálogo general para la extracción de años")
+# Selector de biblioteca basado en el diccionario del Backend
+biblioteca_seleccionada = st.selectbox(
+    "Selecciona la biblioteca para el análisis:",
+    options=list(BIBLIOTECAS.keys()),
+    help="Determina la biblioteca activa y carga su población atendida."
+)
+# Extraemos el valor del diccionario según la selección
+poblacion_atendida = BIBLIOTECAS[biblioteca_seleccionada]
 
-st.sidebar.markdown("---")
+# Distribución de la carga de archivos en 2 columnas en la página principal
+col_up1, col_up2 = st.columns(2)
+
+with col_up1:
+    uploaded_topo = st.file_uploader("Archivo Topográfico (.txt) *Requerido*", type=["txt"], help="Listado topográfico exportado de Absys")
+    uploaded_nunca = st.file_uploader("No Prestados (.txt)", type=["txt"], help="Listado de códigos/IDs que nunca se han prestado")
+
+with col_up2:
+    uploaded_mas2 = st.file_uploader("Más Prestados (.txt)", type=["txt"], help="Listado de códigos/IDs con más préstamos")
+    uploaded_catalogo = st.file_uploader("Catálogo Completo (.txt)", type=["txt"], help="Catálogo general para la extracción de años")
+
+st.markdown("---")
+
+# ==========================================
+# BARRA LATERAL: CONFIGURACIÓN DE ANÁLISIS
+# ==========================================
 st.sidebar.header("⚙️ 2. Configuración de Análisis")
 
 tipo_analisis = st.sidebar.selectbox(
@@ -62,9 +90,7 @@ else:
 
 st.sidebar.markdown("---")
 
-# ==========================================
-# EL BOTÓN AZUL DE ANÁLISIS
-# ==========================================
+# EL BOTÓN AZUL DE ANÁLISIS (Se mantiene en el sidebar para iniciar la acción)
 if st.sidebar.button("🚀 Analizar Fondos", type="primary"):
     st.session_state['analizado'] = True
 
@@ -162,7 +188,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
 # ==========================================
 if st.session_state['analizado']:
     if not uploaded_topo:
-        st.warning("⚠️ Por favor, sube al menos el 'Archivo Topográfico' antes de analizar.")
+        st.warning("⚠️ Por favor, sube al menos el 'Archivo Topográfico' en la página principal antes de analizar.")
     else:
         topo_bytes = uploaded_topo.getvalue()
         nunca_bytes = uploaded_nunca.getvalue() if uploaded_nunca else None
@@ -173,8 +199,10 @@ if st.session_state['analizado']:
             df_completo = procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_analisis, num_caracteres)
             
         if df_completo is not None:
-            st.header("📸 Fotografía General de la Colección")
-            col1, col2, col3 = st.columns(3)
+            st.header(f"📸 Fotografía General: {biblioteca_seleccionada}")
+            
+            # Ampliado a 4 columnas para incluir la población del diccionario backend
+            col1, col2, col3, col4 = st.columns(4)
             
             total_docs = len(df_completo)
             pct_prestados = (df_completo['prestado'].sum() / total_docs) * 100 if total_docs > 0 else 0
@@ -186,6 +214,8 @@ if st.session_state['analizado']:
                 st.metric(label="Documentos Prestados (≥ 1 vez)", value=f"{pct_prestados:.1f} %")
             with col3:
                 st.metric(label="Edad Media (Año de Edición)", value=f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A")
+            with col4:
+                st.metric(label="Población Atendida", value=f"{poblacion_atendida:,}")
                 
             st.markdown("### 📊 Estado y Envejecimiento Global")
             g_col1, g_col2 = st.columns(2)
@@ -254,8 +284,8 @@ if st.session_state['analizado']:
             st.subheader("📋 Tabla de Indicadores para Gestión (Expurgo/Adquisición)")
             st.dataframe(
                 df_filtrada.style.background_gradient(subset=['% Prestados'], cmap='YlGn')
-                                 .background_gradient(subset=['Nunca Prestados'], cmap='Reds')
-                                 .format({"Año Promedio": "{:.1f}", "% Prestados": "{:.1f}%", "Índice de Uso": "{:.2f}"}),
+                           .background_gradient(subset=['Nunca Prestados'], cmap='Reds')
+                           .format({"Año Promedio": "{:.1f}", "% Prestados": "{:.1f}%", "Índice de Uso": "{:.2f}"}),
                 use_container_width=True
             )
             
@@ -269,7 +299,7 @@ else:
     st.info("👋 ¡Bienvenido/a al Analizador Interactivo de Fondos!")
     st.markdown("""
     ### Instrucciones:
-    1. Sube los listados `.txt` en la barra lateral.
-    2. Configura cómo leer el tejuelo o la CDU.
-    3. Pulsa el botón azul **🚀 Analizar Fondos** para visualizar los datos.
+    1. Selecciona tu **Biblioteca** y carga los archivos `.txt` requeridos arriba en la **página principal**.
+    2. Modifica el método de agrupación en la **barra lateral** (si lo deseas).
+    3. Pulsa el botón azul **🚀 Analizar Fondos** ubicado en la barra lateral para procesar los datos.
     """)
