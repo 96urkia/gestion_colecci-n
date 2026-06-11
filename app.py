@@ -96,30 +96,30 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
 
     df_final['prestado'] = df_final['prestamos'] > 0
 
-    # 5. Clasificación semántica de la CDU (Tu lógica mejorada)
+    # 5. Clasificación semántica de la CDU
     def clasificar_dinamico(sign):
         if not sign or not isinstance(sign, str): 
             return "Sin clasificar"
         s = sign.strip().upper()
         
         if tipo_analisis == "Clasificación Mixta Estándar (CDU + Letras)":
-            # 1. MATERIAL AUDIOVISUAL (Filtrar primero I DVD antes que DVD)
+            # 1. MATERIAL AUDIOVISUAL
             if re.search(r'\bI\s+DVD\b', s): 
-                return "DVD Infantil"
+                return "I DVD (DVD Infantil)"
             if re.search(r'\bDVD\b', s): 
                 return "DVD Audiovisual"
 
             # 2. CÓMICS / NOVELA GRÁFICA
             if re.search(r'^IC\b', s): 
-                return "Cómic Infantil"
+                return "IC (Comic Infantil)"
             if re.search(r'^C\b', s): 
-                return "Cómic Adultos"
+                return "C (Comic Adultos)"
 
             # 3. ESPECIALIDADES INFANTILES (Poesía y Teatro)
             if re.search(r'\bIP\b', s): 
-                return "Poesía Infantil"
+                return "IP (Infantil Poesía)"
             if re.search(r'\bIT\b', s): 
-                return "Teatro Infantil"
+                return "IT (Infantil Teatro)"
 
             # 4. CDU INFANTIL (Ej: "I 1", "I 3", "I 8" con espacio)
             if re.search(r'^I\s+[12356789]', s): 
@@ -156,6 +156,13 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
             return s[:num_caracteres]
         
         return "Otros"
+
+    # === ¡AQUÍ ESTÁ LA CORRECCIÓN! ===
+    # Aplicamos la función dinámicamente a cada fila del dataframe final
+    df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
+    
+    # Devolvemos el dataframe procesado y el número de huérfanos
+    return df_final, (len(df_topo) - len(df_final))
 
 # ==========================================
 # ESTILOS E INTERFAZ BASE
@@ -212,7 +219,7 @@ with st.sidebar:
                         tipo_analisis,
                         num_caracteres
                     )
-                    if resultado:
+                    if resultado is not None:
                         st.session_state['resultado'] = resultado
                         st.session_state['analizado'] = True
                         st.rerun()
@@ -302,6 +309,17 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         tabla_cdu.columns = ['Categoría / CDU', 'Nº Volúmenes', '% de la Colección', 'Año Medio Edición', '% de Uso (Prestados)']
         
         st.dataframe(tabla_cdu.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
+
+        # Desplegable extra para verificar la bolsa de "Otros"
+        with st.expander("🔍 Inspeccionar los documentos clasificados en 'Otros'"):
+            df_otros = df_completo[df_completo['categoria'] == 'Otros']
+            if not df_otros.empty:
+                st.dataframe(
+                    df_otros[['signatura_real', 'titulo']].drop_duplicates().head(100), 
+                    use_container_width=True, hide_index=True
+                )
+            else:
+                st.success("¡Excelente! No hay ningún documento clasificado en la categoría 'Otros'.")
 
     # --- PESTAÑA 3: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab3:
