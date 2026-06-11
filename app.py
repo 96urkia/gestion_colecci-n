@@ -5,7 +5,7 @@ import re
 import plotly.express as px
 
 # ==========================================
-# CONFIGURACIÓN DE PÁGINA
+# CONFIGURACIÓN DE PÁGINA Y ESTADO
 # ==========================================
 st.set_page_config(
     page_title="Analizador de Fondos de Biblioteca",
@@ -14,94 +14,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Inicializar variables de sesión si no existen
+if 'analizado' not in st.session_state:
+    st.session_state['analizado'] = False
+if 'resultado' not in st.session_state:
+    st.session_state['resultado'] = None
+
 # ==========================================
-# BACKEND: BIBLIOTECAS
+# BACKEND Y FUNCIÓN DE PROCESAMIENTO
 # ==========================================
 BIBLIOTECAS = {
     "Monteagudo": 1100,
-    # Puedes añadir más: "Otra Biblioteca": 2500, etc.
 }
 
-# ==========================================
-# ESTILOS PERSONALIZADOS
-# ==========================================
-st.markdown("""
-    <style>
-    .main-title {
-        font-size: 2.3rem;
-        color: #1E3A8A;
-        font-weight: bold;
-        margin-bottom: 0.3rem;
-    }
-    .subtitle {
-        font-size: 1.1rem;
-        color: #4B5563;
-        margin-bottom: 2rem;
-    }
-    div[data-testid="metric-container"] {
-        background-color: #F3F4F6;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="main-title">📚 Analizador Interactivo de Fondos</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Herramienta de soporte para expurgo, gestión de colecciones y análisis estratégico</div>', unsafe_allow_html=True)
-
-# ==========================================
-# SIDEBAR: CARGA Y CONFIGURACIÓN
-# ==========================================
-with st.sidebar:
-    st.header("🏢 1. Selección de Biblioteca")
-    biblioteca_seleccionada = st.selectbox(
-        "Biblioteca:",
-        options=list(BIBLIOTECAS.keys())
-    )
-    poblacion_atendida = BIBLIOTECAS[biblioteca_seleccionada]
-
-    st.markdown("---")
-    st.header("📂 2. Carga de Archivos")
-    
-    uploaded_topo = st.file_uploader("Archivo Topográfico (.txt) *Requerido*", 
-                                   type=["txt"], help="Listado topográfico exportado de Absys")
-    uploaded_catalogo = st.file_uploader("Catálogo Completo (.txt) *Requerido*", 
-                                       type=["txt"], help="Catálogo general para extracción de años")
-    
-    uploaded_nunca = st.file_uploader("No Prestados (.txt)", 
-                                    type=["txt"], help="Opcional")
-    uploaded_mas2 = st.file_uploader("Más Prestados (.txt)", 
-                                   type=["txt"], help="Opcional")
-
-    st.markdown("---")
-    st.header("⚙️ 3. Configuración de Análisis")
-    tipo_analisis = st.selectbox(
-        "Método de agrupación del tejuelo/CDU:",
-        ["Clasificación Mixta Estándar (CDU + Letras)", 
-         "Solo Dígitos Iniciales de la CDU", 
-         "Longitud Fija (Primeros caracteres)"]
-    )
-
-    if tipo_analisis == "Longitud Fija (Primeros caracteres)":
-        num_caracteres = st.slider("Número de caracteres a extraer:", 
-                                 min_value=1, max_value=10, value=3)
-    else:
-        num_caracteres = None
-
-    st.markdown("---")
-    analizar = st.button("🚀 Analizar Fondos", type="primary", use_container_width=True)
-
-# Variables de sesión
-if 'analizado' not in st.session_state:
-    st.session_state['analizado'] = False
-
-if analizar:
-    st.session_state['analizado'] = True
-
-# ==========================================
-# FUNCIÓN DE PROCESAMIENTO (CACHEADA)
-# ==========================================
 @st.cache_data
 def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_analisis, num_caracteres):
     if not topo_bytes or not catalogo_bytes:
@@ -192,62 +117,149 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     return df_final, len(df_topo) - len(df_final)
 
 # ==========================================
-# EJECUCIÓN DEL ANÁLISIS
+# ESTILOS Y CABECERA
 # ==========================================
-if st.session_state['analizado']:
-    if not uploaded_topo or not uploaded_catalogo:
-        st.error("⚠️ Debes subir **Archivo Topográfico** y **Catálogo Completo**")
-    else:
-        with st.spinner("Procesando fondos y cruzando con catálogo..."):
-            resultado = procesar_datos(
-                uploaded_topo.getvalue(),
-                uploaded_nunca.getvalue() if uploaded_nunca else None,
-                uploaded_mas2.getvalue() if uploaded_mas2 else None,
-                uploaded_catalogo.getvalue(),
-                tipo_analisis,
-                num_caracteres
-            )
+st.markdown("""
+    <style>
+    .main-title {
+        font-size: 2.3rem;
+        color: #1E3A8A;
+        font-weight: bold;
+        margin-bottom: 0.3rem;
+    }
+    .subtitle {
+        font-size: 1.1rem;
+        color: #4B5563;
+        margin-bottom: 2rem;
+    }
+    div[data-testid="metric-container"] {
+        background-color: #F3F4F6;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="main-title">📚 Analizador Interactivo de Fondos</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Herramienta de soporte para expurgo, gestión de colecciones y análisis estratégico</div>', unsafe_allow_html=True)
+
+# ==========================================
+# SIDEBAR
+# ==========================================
+with st.sidebar:
+    st.header("🏢 1. Selección de Biblioteca")
+    biblioteca_seleccionada = st.selectbox(
+        "Biblioteca:",
+        options=list(BIBLIOTECAS.keys())
+    )
+    poblacion_atendida = BIBLIOTECAS[biblioteca_seleccionada]
+
+    st.markdown("---")
+
+    # MODO CONFIGURACIÓN: Mostrar campos de subida si no se ha analizado aún
+    if not st.session_state['analizado']:
+        st.header("📂 2. Carga de Archivos")
         
-        if resultado:
-            df_completo, huerfanos = resultado
-            
-            st.header(f"📊 Fotografía General: **{biblioteca_seleccionada}**")
-            if huerfanos > 0:
-                st.caption(f"ℹ️ Se excluyeron {huerfanos} registros huérfanos (no encontrados en el catálogo)")
+        uploaded_topo = st.file_uploader("Archivo Topográfico (.txt) *Requerido*", 
+                                       type=["txt"], help="Listado topográfico exportado de Absys")
+        uploaded_catalogo = st.file_uploader("Catálogo Completo (.txt) *Requerido*", 
+                                           type=["txt"], help="Catálogo general para extracción de años")
+        
+        uploaded_nunca = st.file_uploader("No Prestados (.txt)", 
+                                        type=["txt"], help="Opcional")
+        uploaded_mas2 = st.file_uploader("Más Prestados (.txt)", 
+                                       type=["txt"], help="Opcional")
 
-            # Métricas
-            total_docs = len(df_completo)
-            pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
-            edad_media = df_completo['year'].mean()
-            docs_por_habitante = total_docs / poblacion_atendida if poblacion_atendida > 0 else 0
+        st.markdown("---")
+        st.header("⚙️ 3. Configuración de Análisis")
+        tipo_analisis = st.selectbox(
+            "Método de agrupación del tejuelo/CDU:",
+            ["Clasificación Mixta Estándar (CDU + Letras)", 
+             "Solo Dígitos Iniciales de la CDU", 
+             "Longitud Fija (Primeros caracteres)"]
+        )
 
-            m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric("📖 Total Documentos", f"{total_docs:,}")
-            m2.metric("🪪 Prestados", f"{pct_prestados:.1f}%")
-            m3.metric("📅 Edad Media", f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A")
-            m4.metric("👥 Población Atendida", f"{poblacion_atendida:,}")
-            m5.metric("📖/👤 Docs por habitante", f"{docs_por_habitante:.2f}")
+        num_caracteres = None
+        if tipo_analisis == "Longitud Fija (Primeros caracteres)":
+            num_caracteres = st.slider("Número de caracteres a extraer:", 
+                                     min_value=1, max_value=10, value=3)
 
-            # Gráficos
-            st.markdown("---")
-            st.subheader("📈 Uso de la Colección")
-            status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
-            status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
-            status_counts.columns = ['Estado', 'Cantidad']
-            
-            fig_pie = px.pie(status_counts, values='Cantidad', names='Estado',
-                           color_discrete_sequence=px.colors.qualitative.Pastel)
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_pie, use_container_width=True)
-
-            st.markdown("---")
-            st.subheader("⏳ Envejecimiento del Fondo")
-            if not df_completo['year'].dropna().empty:
-                fig_hist = px.histogram(df_completo, x='year', nbins=30,
-                                      labels={'year': 'Año de Edición', 'count': 'Cantidad'})
-                fig_hist.update_layout(height=400)
-                st.plotly_chart(fig_hist, use_container_width=True)
+        st.markdown("---")
+        if st.button("🚀 Analizar Fondos", type="primary", use_container_width=True):
+            if not uploaded_topo or not uploaded_catalogo:
+                st.error("⚠️ Debes subir **Archivo Topográfico** y **Catálogo Completo**")
             else:
-                st.info("No hay información de años disponible.")
+                with st.spinner("Procesando fondos y cruzando con catálogo..."):
+                    resultado = procesar_datos(
+                        uploaded_topo.getvalue(),
+                        uploaded_nunca.getvalue() if uploaded_nunca else None,
+                        uploaded_mas2.getvalue() if uploaded_mas2 else None,
+                        uploaded_catalogo.getvalue(),
+                        tipo_analisis,
+                        num_caracteres
+                    )
+                    
+                    if resultado:
+                        st.session_state['resultado'] = resultado
+                        st.session_state['analizado'] = True
+                        st.rerun() # Refresca la app para ocultar la barra lateral
+    
+    # MODO RESULTADOS: Archivos ocultos, mostrar botón para volver atrás
+    else:
+        st.success("✅ Archivos procesados con éxito.")
+        st.info("La carga de archivos está oculta para dejar más espacio al análisis.")
+        
+        if st.button("🔄 Volver a subir archivos", use_container_width=True):
+            st.session_state['analizado'] = False
+            st.session_state['resultado'] = None
+            st.rerun()
+
+# ==========================================
+# PANEL CENTRAL: RESULTADOS
+# ==========================================
+if st.session_state['analizado'] and st.session_state['resultado'] is not None:
+    df_completo, huerfanos = st.session_state['resultado']
+    
+    st.header(f"📊 Fotografía General: **{biblioteca_seleccionada}**")
+    if huerfanos > 0:
+        st.caption(f"ℹ️ Se excluyeron {huerfanos} registros huérfanos (no encontrados en el catálogo)")
+
+    # Métricas
+    total_docs = len(df_completo)
+    pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
+    edad_media = df_completo['year'].mean()
+    docs_por_habitante = total_docs / poblacion_atendida if poblacion_atendida > 0 else 0
+
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("📖 Total Documentos", f"{total_docs:,}")
+    m2.metric("🪪 Prestados", f"{pct_prestados:.1f}%")
+    m3.metric("📅 Edad Media", f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A")
+    m4.metric("👥 Población Atendida", f"{poblacion_atendida:,}")
+    m5.metric("📖/👤 Docs por habitante", f"{docs_por_habitante:.2f}")
+
+    # Gráficos
+    st.markdown("---")
+    st.subheader("📈 Uso de la Colección")
+    status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
+    status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
+    status_counts.columns = ['Estado', 'Cantidad']
+    
+    fig_pie = px.pie(status_counts, values='Cantidad', names='Estado',
+                   color_discrete_sequence=px.colors.qualitative.Pastel)
+    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+    st.plotly_chart(fig_pie, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("⏳ Envejecimiento del Fondo")
+    if not df_completo['year'].dropna().empty:
+        fig_hist = px.histogram(df_completo, x='year', nbins=30,
+                              labels={'year': 'Año de Edición', 'count': 'Cantidad'})
+        fig_hist.update_layout(height=400)
+        st.plotly_chart(fig_hist, use_container_width=True)
+    else:
+        st.info("No hay información de años disponible.")
+
 else:
+    # Mensaje inicial en la pantalla principal
     st.info("👉 Usa el **menú lateral** para cargar los archivos y pulsar **Analizar Fondos**.")
