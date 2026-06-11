@@ -34,7 +34,10 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     div[data-testid="metric-container"] {
-        margin-bottom: 1rem;
+        background-color: #F3F4F6;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -125,7 +128,6 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
 
     # 2. LECTURA DEL CATÁLOGO Y EXTRACCIÓN DE AÑOS
     cat_text = catalogo_bytes.decode('utf-8', errors='replace')
-    # Limpiamos fechas de cabecera de Absys para no confundirlas con años de edición
     cat_text = re.sub(r'\b\d{2}/\d{2}/\d{4}\b', '', cat_text)
     
     year_dict = {}
@@ -143,11 +145,8 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         if years:
             year_dict[rid] = max(years)
             
-    # 3. CRUCE ESTRICTO (El filtro que da los 11.217 documentos)
-    # Nos quedamos SOLAMENTE con los registros del topográfico que existen en el catálogo
+    # 3. CRUCE ESTRICTO
     df_final = df_topo[df_topo['record_id'].isin(year_dict.keys())].copy()
-    
-    # Asignamos el año validado
     df_final['year'] = df_final['record_id'].map(year_dict)
 
     # 4. CRUCE DE PRÉSTAMOS
@@ -197,7 +196,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         return "Otros"
 
     df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
-    return df_final
+    return df_final, len(df_topo) - len(df_final)
 
 # ==========================================
 # EJECUCIÓN SI SE HA PULSADO EL BOTÓN
@@ -212,10 +211,16 @@ if st.session_state['analizado']:
         catalogo_bytes = uploaded_catalogo.getvalue()
         
         with st.spinner("Procesando y cruzando los fondos de la colección con el catálogo..."):
-            df_completo = procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_analisis, num_caracteres)
+            resultado = procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_analisis, num_caracteres)
             
-        if df_completo is not None:
+        if resultado is not None:
+            df_completo, huerfanos = resultado
+            
             st.header(f"📊 Fotografía General: {biblioteca_seleccionada}")
+            
+            if huerfanos > 0:
+                st.caption(f"ℹ️ *Nota: Se han excluido {huerfanos} registros 'huérfanos' presentes en el topográfico pero no localizados en el catálogo general.*")
+            
             st.markdown("---")
             
             # Cálculos globales
@@ -224,38 +229,46 @@ if st.session_state['analizado']:
             edad_media = df_completo['year'].mean()
             docs_por_habitante = total_docs / poblacion_atendida if poblacion_atendida > 0 else 0
             
-            col_metricas, col_pie, col_hist = st.columns([1, 1.5, 1.5])
+            # ====================================================
+            # FILA 1: INDICADORES CLAVE (Horizontal)
+            # ====================================================
+            st.markdown("#### 📌 Indicadores Clave")
+            m1, m2, m3, m4, m5 = st.columns(5)
             
-            # MÉTRICAS VERTICALES CON ICONOS
-            with col_metricas:
-                st.markdown("#### 📌 Indicadores Clave")
-                st.metric(label="📖 Total Documentos", value=f"{total_docs:,}")
-                st.metric(label="🪪 Documentos Prestados", value=f"{pct_prestados:.1f} %")
-                st.metric(label="📅 Edad Media (Edición)", value=f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A")
-                st.metric(label="👤 Población Atendida", value=f"{poblacion_atendida:,}")
-                st.metric(label="📖👤 Docs. por Habitante", value=f"{docs_por_habitante:.2f}")
-                
-            # GRÁFICOS
-            with col_pie:
-                st.markdown("#### 📈 Uso de la Colección")
-                status_counts = df_completo['prestamos'].map({0: 'Nunca prestado', 1: 'Prestado estándar', 2: 'Muy prestado'}).value_counts().reset_index()
-                status_counts.columns = ['Estado', 'Cantidad']
-                fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', 
-                                 color_discrete_sequence=px.colors.qualitative.Pastel)
-                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20))
-                st.plotly_chart(fig_pie, use_container_width=True)
-                
-            with col_hist:
-                st.markdown("#### ⏳ Envejecimiento del Fondo")
-                if not df_completo['year'].dropna().empty:
-                    fig_hist = px.histogram(df_completo, x='year', nbins=30,
-                                            labels={'year': 'Año', 'count': 'Nº de Documentos'},
-                                            color_discrete_sequence=['#2563EB'])
-                    fig_hist.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
-                    st.plotly_chart(fig_hist, use_container_width=True)
-                else:
-                    st.info("Sube el archivo de catálogo para ver la distribución temporal.")
+            m1.metric(label="📖 Total Docs.", value=f"{total_docs:,}")
+            m2.metric(label="🪪 Docs. Prestados", value=f"{pct_prestados:.1f} %")
+            m3.metric(label="📅 Edad Media", value=f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A")
+            m4.metric(label="👤 Pob. Atendida", value=f"{poblacion_atendida:,}")
+            m5.metric(label="📖👤 Docs/Habitante", value=f"{docs_por_habitante:.2f}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # ====================================================
+            # FILA 2: USO DE LA COLECCIÓN
+            # ====================================================
+            st.markdown("#### 📈 Uso de la Colección")
+            status_counts = df_completo['prestamos'].map({0: 'Nunca prestado', 1: 'Prestado estándar', 2: 'Muy prestado'}).value_counts().reset_index()
+            status_counts.columns = ['Estado', 'Cantidad']
+            fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', 
+                             color_discrete_sequence=px.colors.qualitative.Pastel)
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+            fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=400)
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # ====================================================
+            # FILA 3: ENVEJECIMIENTO DEL FONDO
+            # ====================================================
+            st.markdown("#### ⏳ Envejecimiento del Fondo")
+            if not df_completo['year'].dropna().empty:
+                fig_hist = px.histogram(df_completo, x='year', nbins=30,
+                                        labels={'year': 'Año de Edición', 'count': 'Nº de Documentos'},
+                                        color_discrete_sequence=['#2563EB'])
+                fig_hist.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20), height=400)
+                st.plotly_chart(fig_hist, use_container_width=True)
+            else:
+                st.info("Sube el archivo de catálogo para ver la distribución temporal.")
                     
 else:
     st.info("👋 ¡Bienvenido/a al Analizador Interactivo de Fondos!")
