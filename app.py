@@ -254,5 +254,3 @@ else:
     2. Modifica el método de agrupación en la **barra lateral** (si lo deseas).
     3. Pulsa el botón azul **🚀 Analizar Fondos** ubicado en la barra lateral para ver los indicadores y gráficos clave.
     """)
-
-```
