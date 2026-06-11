@@ -103,12 +103,38 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         s = sign.strip().upper()
         
         if tipo_analisis == "Clasificación Mixta Estándar (CDU + Letras)":
-            if re.search(r'I[0-3]', s) or re.search(r'\b(JN|IP|IT)', s): 
+            # 1. MATERIAL AUDIOVISUAL (Filtrar primero I DVD antes que DVD)
+            if re.search(r'\bI\s+DVD\b', s): 
+                return "DVD Infantil"
+            if re.search(r'\bDVD\b', s): 
+                return "DVD Audiovisual"
+
+            # 2. CÓMICS / NOVELA GRÁFICA
+            if re.search(r'^IC\b', s): 
+                return "Cómic Infantil"
+            if re.search(r'^C\b', s): 
+                return "Cómic Adultos"
+
+            # 3. ESPECIALIDADES INFANTILES (Poesía y Teatro)
+            if re.search(r'\bIP\b', s): 
+                return "Poesía Infantil"
+            if re.search(r'\bIT\b', s): 
+                return "Teatro Infantil"
+
+            # 4. CDU INFANTIL (Ej: "I 1", "I 3", "I 8" con espacio)
+            if re.search(r'^I\s+[12356789]', s): 
+                return "CDU Infantil"
+
+            # 5. INFANTIL / JUVENIL ESTÁNDAR (Narrativa/Ficción sin espacio, ej: I1, I2, JN)
+            if re.search(r'^I[0-3]', s) or re.search(r'\bJN\b', s): 
                 return "Infantil / Juvenil"
+            
+            # 6. FICCIÓN ADULTOS (Narrativa, Poesía, Teatro)
             if re.search(r'\bN\s', s): return "Ficción / Narrativa"
             if re.search(r'\bP\s', s): return "Poesía"
             if re.search(r'\bT\s', s): return "Teatro"
             
+            # 7. CDU ADULTOS (Dígito inicial)
             m = re.match(r'^(\d)', s)
             if m:
                 cats = {
@@ -119,6 +145,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
                     '9':'9 - Historia / Geografía'
                 }
                 return cats.get(m.group(1), f"CDU {m.group(1)}xx")
+            
             return "Otros"
             
         elif tipo_analisis == "Solo Dígitos Iniciales de la CDU":
@@ -129,10 +156,6 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
             return s[:num_caracteres]
         
         return "Otros"
-
-    df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
-    
-    return df_final, len(df_topo) - len(df_final)
 
 # ==========================================
 # ESTILOS E INTERFAZ BASE
