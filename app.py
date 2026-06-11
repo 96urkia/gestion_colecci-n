@@ -1,3 +1,10 @@
+¡Me parece una idea fantástica! Añadir iconos visuales (emojis) y cambiar la orientación a vertical le va a dar un aspecto de **Dashboard (Panel de Control)** mucho más profesional y fácil de leer.
+
+Para que todo encaje a la perfección, he rediseñado la disposición de los resultados: he dividido la pantalla en **tres grandes columnas**. En la primera columna de la izquierda aparecerán tus 5 métricas apiladas verticalmente con sus respectivos iconos. En las otras dos columnas de la derecha he colocado los gráficos para que quede todo integrado en un solo "golpe de vista".
+
+Aquí tienes el código actualizado. Cópialo y sustitúyelo:
+
+```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -32,6 +39,10 @@ st.markdown("""
         font-size: 1.1rem;
         color: #4B5563;
         margin-bottom: 2rem;
+    }
+    /* Estilo para darle un poco de aire a las métricas verticales */
+    div[data-testid="metric-container"] {
+        margin-bottom: 1rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -198,48 +209,45 @@ if st.session_state['analizado']:
             
         if df_completo is not None:
             st.header(f"📊 Fotografía General: {biblioteca_seleccionada}")
+            st.markdown("---")
             
             # Cálculos globales
             total_docs = len(df_completo)
             pct_prestados = (df_completo['prestado'].sum() / total_docs) * 100 if total_docs > 0 else 0
             edad_media = df_completo['year'].mean()
-            
-            # NUEVO CÁLCULO: Documentos por Habitante
             docs_por_habitante = total_docs / poblacion_atendida if poblacion_atendida > 0 else 0
             
-            # Interfaz de métricas ampliada a 5 columnas para el resumen definitivo
-            col1, col2, col3, col4, col5 = st.columns(5)
+            # NUEVO LAYOUT: 1 Columna para métricas (izquierda), 2 para gráficos (derecha)
+            col_metricas, col_pie, col_hist = st.columns([1, 1.5, 1.5])
             
-            with col1:
-                st.metric(label="Total Documentos", value=f"{total_docs:,}")
-            with col2:
-                st.metric(label="Documentos Prestados (≥ 1 vez)", value=f"{pct_prestados:.1f} %")
-            with col3:
-                st.metric(label="Edad Media (Año de Edición)", value=f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A")
-            with col4:
-                st.metric(label="Población Atendida", value=f"{poblacion_atendida:,}")
-            with col5:
-                st.metric(label="Documentos por Habitante", value=f"{docs_por_habitante:.2f}")
+            # MÉTRICAS VERTICALES CON ICONOS
+            with col_metricas:
+                st.markdown("#### 📌 Indicadores Clave")
+                st.metric(label="📖 Total Documentos", value=f"{total_docs:,}")
+                st.metric(label="🪪 Documentos Prestados", value=f"{pct_prestados:.1f} %")
+                st.metric(label="📅 Edad Media (Edición)", value=f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A")
+                st.metric(label="👤 Población Atendida", value=f"{poblacion_atendida:,}")
+                st.metric(label="📖👤 Docs. por Habitante", value=f"{docs_por_habitante:.2f}")
                 
-            st.markdown("### 📈 Estado y Envejecimiento Global de la Colección")
-            g_col1, g_col2 = st.columns(2)
-            
-            with g_col1:
+            # GRÁFICOS
+            with col_pie:
+                st.markdown("#### 📈 Uso de la Colección")
                 status_counts = df_completo['prestamos'].map({0: 'Nunca prestado', 1: 'Prestado estándar', 2: 'Muy prestado'}).value_counts().reset_index()
                 status_counts.columns = ['Estado', 'Cantidad']
                 fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', 
-                                 title="Distribución de Uso de la Colección",
                                  color_discrete_sequence=px.colors.qualitative.Pastel)
                 fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                # Ajustamos márgenes para que encaje mejor visualmente
+                fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20))
                 st.plotly_chart(fig_pie, use_container_width=True)
                 
-            with g_col2:
+            with col_hist:
+                st.markdown("#### ⏳ Envejecimiento del Fondo")
                 if not df_completo['year'].dropna().empty:
                     fig_hist = px.histogram(df_completo, x='year', nbins=30,
-                                            title='Antigüedad del Fondo',
                                             labels={'year': 'Año', 'count': 'Nº de Documentos'},
                                             color_discrete_sequence=['#2563EB'])
-                    fig_hist.update_layout(showlegend=False)
+                    fig_hist.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
                     st.plotly_chart(fig_hist, use_container_width=True)
                 else:
                     st.info("Sube el archivo de catálogo para ver la distribución temporal.")
@@ -252,3 +260,5 @@ else:
     2. Modifica el método de agrupación en la **barra lateral** (si lo deseas).
     3. Pulsa el botón azul **🚀 Analizar Fondos** ubicado en la barra lateral para ver los indicadores y gráficos clave.
     """)
+
+```
