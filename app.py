@@ -239,10 +239,9 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     # 1. Recuperar primero los datos limpios del estado de la sesión
     df_completo, huerfanos = st.session_state['resultado']
     
-    # 2. NORMALIZACIÓN DE COLUMNAS: Se ejecuta AQUÍ para trabajar sobre los datos correctos
-    for col in df_completo.columns:
-        if 'supl' in col.lower() and col != 'Sig. supl.':
-            df_completo = df_completo.rename(columns={col: 'signatura_suplementaria'})
+    # 2. NORMALIZACIÓN DE COLUMNAS: Mapeo directo y seguro
+    if 'Sig. supl.' in df_completo.columns:
+        df_completo = df_completo.rename(columns={'Sig. supl.': 'signatura_suplementaria'})
     
     # Bloque de KPIs comunes en la parte superior (Fila 1)
     total_docs = len(df_completo)
