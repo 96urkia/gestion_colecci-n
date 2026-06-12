@@ -254,8 +254,13 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
     st.markdown("---")
 
-    # CREACIÓN DE LAS PESTAÑAS
-    tab1, tab2, tab3 = st.tabs(["📊 Distribución y Uso", "📚 Análisis por CDU / Categorías", "📋 Explorador de Colección"])
+    # CREACIÓN DE LAS PESTAÑAS (CORREGIDO: Ahora son 4 pestañas bien distribuidas)
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Distribución y Uso", 
+        "📚 Análisis por CDU / Categorías", 
+        "🏷️ Signatura Suplementaria", 
+        "📋 Explorador de Colección"
+    ])
 
     # --- PESTAÑA 1: DISTRIBUCIÓN Y USO GENERAL ---
     with tab1:
@@ -281,7 +286,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             pauta_hab = 1.5
             pauta_min, pauta_max = 80000, 95000
 
-        # 2. GENERACIÓN DE ALERTAS DE VOLUMEN ABSOLUTO Y RATIO (CORREGIDO)
+        # 2. GENERACIÓN DE ALERTAS DE VOLUMEN ABSOLUTO Y RATIO
         col_al1, col_al2 = st.columns(2)
         
         with col_al1:
@@ -298,7 +303,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             if docs_por_habitante < pauta_hab:
                 st.warning(f"⚠️ **Ratio por Habitante Bajo:** Dispones de **{docs_por_habitante:.2f}** doc./hab. La pauta del Ministerio para tu municipio exige un mínimo de **{pauta_hab}** doc./hab.")
             elif total_docs > pauta_max:
-                # Si el volumen general se pasa del máximo, el ratio lógicamente está alterado
                 st.info(f"ℹ️ **Ratio Anómalamente Elevado:** Tienes **{docs_por_habitante:.2f}** doc./hab. Supera drásticamente la recomendación base de **{pauta_hab}**, reflejando el sobredimensionamiento del fondo.")
             else:
                 st.success(f"✅ **Ratio por Habitante Óptimo:** Tienes **{docs_por_habitante:.2f}** doc./hab., cumpliendo la recomendación mínima de **{pauta_hab}** doc./hab.")
@@ -322,7 +326,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         pct_infantil = (macro_counts.get("Infantil/Juvenil", 0) / total_docs * 100) if total_docs > 0 else 0
         pct_audio = (macro_counts.get("Audiovisuales/Multimedia", 0) / total_docs * 100) if total_docs > 0 else 0
 
-        # Crear tabla comparativa visual
         tabla_macro = pd.DataFrame({
             "Macro-Sección": ["Adultos", "Infantil/Juvenil", "Audiovisuales/Multimedia"],
             "Pauta Oficial": ["65.0%", "20.0%", "15.0%"],
@@ -331,16 +334,14 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         })
         st.dataframe(tabla_macro, use_container_width=True, hide_index=True)
 
-        # Pequeño aviso cualitativo para la sección infantil general
         if pct_infantil < 20.0:
             st.caption("💡 *Nota:* Tu sección infantil está por debajo del 20% recomendado. Considera desviar parte de las adquisiciones a este fondo.")
         elif pct_infantil > 25.0:
             st.caption("💡 *Nota:* Tu sección infantil supera la recomendación base (sobrepasa el 25% total). Es un fondo potente en tu biblioteca.")
 
         st.markdown("---")
-
         
-        # 5. GRÁFICOS ORIGINALES DE ROTACIÓN Y CRONOLOGÍA (Movidos abajo para limpieza)
+        # 5. GRÁFICOS ORIGINALES DE ROTACIÓN Y CRONOLOGÍA
         st.subheader("📈 Nivel de rotación física")
         status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
         status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
@@ -374,7 +375,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("---")
         st.subheader("🔍 Desglose Métrico por Sección")
         
-        # Construir tabla analítica base
         tabla_cdu = df_completo.groupby('categoria').agg(
             Volumenes=('record_id', 'count'),
             Edad_Media=('year', lambda x: int(x.mean()) if not np.isnan(x.mean()) else np.nan),
@@ -387,32 +387,21 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         tabla_cdu = tabla_cdu[['categoria', 'Volumenes', '% de la Colección', 'Edad_Media', '% Rotación Seccional']]
         tabla_cdu.columns = ['Categoría / CDU', 'Nº Volúmenes', '% de la Colección', 'Año Medio Edición', '% de Uso (Prestados)']
         
-        # Función interna para discriminar Infantil / Adultos de forma robusta
-      
         def es_infantil(categoria):
             c = str(categoria).lower()
-            
-            # 1. Si contiene las palabras clave explícitas
             if "infantil" in c or "juvenil" in c:
                 return True
-                
-            # 2. Si es un código directo de los que acabamos de separar
             if c in ['i0', 'i1', 'i2', 'i3', 'jn']:
                 return True
-            
-            # 3. Recuperamos la configuración guardada en memoria para longitud fija
             tipo_guardado = st.session_state.get('tipo_analisis', '')
             if tipo_guardado == "Longitud Fija (Primeros caracteres)" and c.startswith(('i', 'j')):
                 return True
-                
             return False
 
-        # Segmentar los dataframes mediante máscaras booleanas
         es_inf = tabla_cdu['Categoría / CDU'].apply(es_infantil)
         tabla_infantil = tabla_cdu[es_inf].copy()
         tabla_adultos = tabla_cdu[~es_inf].copy()
         
-        # Renderizado de la tabla de Adultos
         st.markdown("### 👥 Colección de Adultos")
         if not tabla_adultos.empty:
             st.dataframe(tabla_adultos.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
@@ -421,7 +410,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Renderizado de la tabla Infantil
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         if not tabla_infantil.empty:
             st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
@@ -430,7 +418,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
         st.markdown("---")
 
-        # Desplegable extra para verificar la bolsa de "Otros"
         with st.expander("🔍 Inspeccionar los documentos clasificados en 'Otros'"):
             df_otros = df_completo[df_completo['categoria'] == 'Otros']
             if not df_otros.empty:
@@ -441,19 +428,15 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             else:
                 st.success("¡Excelente! No hay ningún documento clasificado en la categoría 'Otros'.")
 
-    # =====================================================================
-# sección 4: ANÁLISIS DE LA SIGNATURA SUPLEMENTARIA
-# =====================================================================
-        with tab3:
-        st.header("📊 Análisis de la Signatura Suplementaria")
+    # --- PESTAÑA 3: ANÁLISIS DE LA SIGNATURA SUPLEMENTARIA ---
+    with tab3:
+        st.subheader("📊 Análisis de la Signatura Suplementaria")
         
-        if 'signatura_suplementaria' in df.columns:
-            # Filtrar nulos y vacíos para trabajar solo con registros válidos
-            df_sup = df[df['signatura_suplementaria'].notna() & (df['signatura_suplementaria'].astype(str).str.strip() != '')].copy()
+        # CORREGIDO: Cambiado 'df' por 'df_completo'
+        if 'signatura_suplementaria' in df_completo.columns:
+            df_sup = df_completo[df_completo['signatura_suplementaria'].notna() & (df_completo['signatura_suplementaria'].astype(str).str.strip() != '')].copy()
             
             if not df_sup.empty:
-                # Al igual que con la CDU, extraemos el prefijo o código principal 
-                # (por ejemplo: prefijos de sección, infantil, local, tipología, etc.)
                 df_sup['Codigo_Sup'] = df_sup['signatura_suplementaria'].astype(str).str.extract(r'^([A-Za-z0-9]+)')
                 
                 col1, col2 = st.columns(2)
@@ -462,33 +445,29 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     st.metric("Registros con Signatura Suplementaria", len(df_sup))
                     st.write("**Top 10 códigos/prefijos más frecuentes:**")
                     
-                    # Conteo de frecuencias imitando el desglose de la CDU
                     frecuencias_sup = (
                         df_sup['Codigo_Sup']
                         .value_counts()
                         .head(10)
                         .reset_index()
-                        .rename(columns={'index': 'Código/Prefijo', 'count': 'Frecuencia'})
+                        .rename(columns={'Codigo_Sup': 'Código/Prefijo', 'count': 'Frecuencia'})
                     )
                     st.dataframe(frecuencias_sup, use_container_width=True, hide_index=True)
                     
                 with col2:
                     st.write("**Distribución de los códigos principales:**")
-                    # Gráfico de barras que replica la visualización de la CDU
                     chart_data = df_sup['Codigo_Sup'].value_counts().head(10)
                     st.bar_chart(chart_data)
                     
-                # Desglose detallado opcional para explorar el texto completo
                 with st.expander("Ver desglose completo de signaturas suplementarias"):
                     st.dataframe(
                         df_sup[['signatura_suplementaria', 'Codigo_Sup']].value_counts().reset_index(name='Total'),
-                        use_container_width=True
+                        use_container_width=True, hide_index=True
                     )
             else:
                 st.info("La columna existe, pero no contiene datos o está vacía.")
         else:
             st.error("No se ha encontrado la columna 'signatura_suplementaria' en el conjunto de datos actual.")
-    
     
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
