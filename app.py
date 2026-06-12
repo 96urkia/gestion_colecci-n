@@ -282,7 +282,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             pauta_hab = 1.5
             pauta_min, pauta_max = 80000, 95000
 
-        # 2. GENERACIÓN DE ALERTAS DE VOLUMEN ABSOLUTO Y RATIO
+        # 2. GENERACIÓN DE ALERTAS DE VOLUMEN ABSOLUTO Y RATIO (CORREGIDO)
         col_al1, col_al2 = st.columns(2)
         
         with col_al1:
@@ -298,10 +298,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         with col_al2:
             if docs_por_habitante < pauta_hab:
                 st.warning(f"⚠️ **Ratio por Habitante Bajo:** Dispones de **{docs_por_habitante:.2f}** doc./hab. La pauta del Ministerio para tu municipio exige un mínimo de **{pauta_hab}** doc./hab.")
+            elif total_docs > pauta_max:
+                # Si el volumen general se pasa del máximo, el ratio lógicamente está alterado
+                st.info(f"ℹ️ **Ratio Anómalamente Elevado:** Tienes **{docs_por_habitante:.2f}** doc./hab. Supera drásticamente la recomendación base de **{pauta_hab}**, reflejando el sobredimensionamiento del fondo.")
             else:
-                st.success(f"✅ **Ratio por Habitante Óptimo:** Tienes **{docs_por_habitante:.2f}** doc./hab., superando la recomendación mínima de **{pauta_hab}** doc./hab.")
-
-        st.markdown("<br>", unsafe_allow_html=True)
+                st.success(f"✅ **Ratio por Habitante Óptimo:** Tienes **{docs_por_habitante:.2f}** doc./hab., cumpliendo la recomendación mínima de **{pauta_hab}** doc./hab.")
 
         # 3. AUDITORÍA DE MACRO-DISTRIBUCIÓN DE LA COLECCIÓN
         st.write("#### 📊 Distribución Macroscópica del Fondo")
