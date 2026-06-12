@@ -157,11 +157,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         
         return "Otros"
 
-    # === ¡AQUÍ ESTÁ LA CORRECCIÓN! ===
-    # Aplicamos la función dinámicamente a cada fila del dataframe final
     df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
-    
-    # Devolvemos el dataframe procesado y el número de huérfanos
     return df_final, (len(df_topo) - len(df_final))
 
 # ==========================================
@@ -236,7 +232,7 @@ with st.sidebar:
 if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     df_completo, huerfanos = st.session_state['resultado']
     
-    # Bloque de KPIs comunes en la parte superior
+    # Bloque de KPIs comunes en la parte superior (Fila 1)
     total_docs = len(df_completo)
     pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
     edad_media = df_completo['year'].mean()
@@ -258,33 +254,32 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
     # --- PESTAÑA 1: DISTRIBUCIÓN Y USO GENERAL ---
     with tab1:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("📈 Nivel de rotación física")
-            status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
-            status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
-            status_counts.columns = ['Estado', 'Cantidad']
-            fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', hole=0.4,
-                             color_discrete_sequence=px.colors.qualitative.Safe)
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-        with c2:
-            st.subheader("⏳ Cronología de Ediciones")
-            if not df_completo['year'].dropna().empty:
-                fig_hist = px.histogram(df_completo, x='year', nbins=25, 
-                                        labels={'year': 'Año de Publicación', 'count': 'Volúmenes'},
-                                        color_discrete_sequence=['#1E3A8A'])
-                st.plotly_chart(fig_hist, use_container_width=True)
+        # Fila 2: Nivel de rotación física
+        st.subheader("📈 Nivel de rotación física")
+        status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
+        status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
+        status_counts.columns = ['Estado', 'Cantidad']
+        fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', hole=0.4,
+                         color_discrete_sequence=px.colors.qualitative.Safe)
+        st.plotly_chart(fig_pie, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Fila 3: Cronología de Ediciones
+        st.subheader("⏳ Cronología de Ediciones")
+        if not df_completo['year'].dropna().empty:
+            fig_hist = px.histogram(df_completo, x='year', nbins=25, 
+                                    labels={'year': 'Año de Publicación', 'count': 'Volúmenes'},
+                                    color_discrete_sequence=['#1E3A8A'])
+            st.plotly_chart(fig_hist, use_container_width=True)
 
     # --- PESTAÑA 2: NUEVO ANÁLISIS DETALLADO POR CDU ---
     with tab2:
         st.subheader("📊 Análisis de Volumen de Fondos por CDU / Categorías")
         
-        # Conteo de libros por categoría
         cat_counts = df_completo['categoria'].value_counts().reset_index()
         cat_counts.columns = ['Categoría', 'Volúmenes']
         
-        # Gráfico de barras horizontales interactivo
         fig_bar = px.bar(cat_counts, x='Volúmenes', y='Categoría', orientation='h',
                          text='Volúmenes', color='Volúmenes',
                          color_continuous_scale=px.colors.sequential.Blugrn)
@@ -294,7 +289,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("---")
         st.subheader("🔍 Desglose Métrico por Sección")
         
-        # Construir una tabla analítica: Volumen, % del total y Año medio por sección
         tabla_cdu = df_completo.groupby('categoria').agg(
             Volumenes=('record_id', 'count'),
             Edad_Media=('year', lambda x: int(x.mean()) if not np.isnan(x.mean()) else np.nan),
@@ -304,13 +298,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         tabla_cdu['% de la Colección'] = (tabla_cdu['Volumenes'] / total_docs * 100).round(2)
         tabla_cdu['% Rotación Seccional'] = (tabla_cdu['Prestados'] / tabla_cdu['Volumenes'] * 100).round(2)
         
-        # Reordenar y renombrar para la vista del usuario
         tabla_cdu = tabla_cdu[['categoria', 'Volumenes', '% de la Colección', 'Edad_Media', '% Rotación Seccional']]
         tabla_cdu.columns = ['Categoría / CDU', 'Nº Volúmenes', '% de la Colección', 'Año Medio Edición', '% de Uso (Prestados)']
         
         st.dataframe(tabla_cdu.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-        # Desplegable extra para verificar la bolsa de "Otros"
         with st.expander("🔍 Inspeccionar los documentos clasificados en 'Otros'"):
             df_otros = df_completo[df_completo['categoria'] == 'Otros']
             if not df_otros.empty:
@@ -326,7 +318,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.subheader("📋 Inventario de Títulos Extraídos")
         st.markdown("Utiliza el buscador integrado de la tabla para localizar títulos o signaturas específicas:")
         
-        # Mostrar columnas útiles incluyendo el nuevo campo "titulo"
         df_vista = df_completo[['record_id', 'signatura_real', 'categoria', 'titulo', 'year']].copy()
         df_vista.columns = ['ID Registro', 'Signatura', 'Categoría / CDU', 'Título del Documento', 'Año']
         
