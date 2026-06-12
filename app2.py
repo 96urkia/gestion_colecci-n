@@ -96,19 +96,45 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
 
     df_final['prestado'] = df_final['prestamos'] > 0
 
-    # 5. Clasificación semántica de la CDU (Tu lógica mejorada)
+    # 5. Clasificación semántica de la CDU
     def clasificar_dinamico(sign):
         if not sign or not isinstance(sign, str): 
             return "Sin clasificar"
         s = sign.strip().upper()
         
         if tipo_analisis == "Clasificación Mixta Estándar (CDU + Letras)":
-            if re.search(r'I[0-3]', s) or re.search(r'\b(JN|IP|IT)', s): 
+            # 1. MATERIAL AUDIOVISUAL
+            if re.search(r'\bI\s+DVD\b', s): 
+                return "I DVD (DVD Infantil)"
+            if re.search(r'\bDVD\b', s): 
+                return "DVD Audiovisual"
+
+            # 2. CÓMICS / NOVELA GRÁFICA
+            if re.search(r'^IC\b', s): 
+                return "IC (Comic Infantil)"
+            if re.search(r'^C\b', s): 
+                return "C (Comic Adultos)"
+
+            # 3. ESPECIALIDADES INFANTILES (Poesía y Teatro)
+            if re.search(r'\bIP\b', s): 
+                return "IP (Infantil Poesía)"
+            if re.search(r'\bIT\b', s): 
+                return "IT (Infantil Teatro)"
+
+            # 4. CDU INFANTIL (Ej: "I 1", "I 3", "I 8" con espacio)
+            if re.search(r'^I\s+[12356789]', s): 
+                return "CDU Infantil"
+
+            # 5. INFANTIL / JUVENIL ESTÁNDAR (Narrativa/Ficción sin espacio, ej: I1, I2, JN)
+            if re.search(r'^I[0-3]', s) or re.search(r'\bJN\b', s): 
                 return "Infantil / Juvenil"
+            
+            # 6. FICCIÓN ADULTOS (Narrativa, Poesía, Teatro)
             if re.search(r'\bN\s', s): return "Ficción / Narrativa"
             if re.search(r'\bP\s', s): return "Poesía"
             if re.search(r'\bT\s', s): return "Teatro"
             
+            # 7. CDU ADULTOS (Dígito inicial)
             m = re.match(r'^(\d)', s)
             if m:
                 cats = {
@@ -119,6 +145,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
                     '9':'9 - Historia / Geografía'
                 }
                 return cats.get(m.group(1), f"CDU {m.group(1)}xx")
+            
             return "Otros"
             
         elif tipo_analisis == "Solo Dígitos Iniciales de la CDU":
@@ -131,8 +158,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         return "Otros"
 
     df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
-    
-    return df_final, len(df_topo) - len(df_final)
+    return df_final, (len(df_topo) - len(df_final))
 
 # ==========================================
 # ESTILOS E INTERFAZ BASE
@@ -189,7 +215,7 @@ with st.sidebar:
                         tipo_analisis,
                         num_caracteres
                     )
-                    if resultado:
+                    if resultado is not None:
                         st.session_state['resultado'] = resultado
                         st.session_state['analizado'] = True
                         st.rerun()
@@ -206,7 +232,7 @@ with st.sidebar:
 if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     df_completo, huerfanos = st.session_state['resultado']
     
-    # Bloque de KPIs comunes en la parte superior
+    # Bloque de KPIs comunes en la parte superior (Fila 1)
     total_docs = len(df_completo)
     pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
     edad_media = df_completo['year'].mean()
@@ -228,33 +254,32 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
     # --- PESTAÑA 1: DISTRIBUCIÓN Y USO GENERAL ---
     with tab1:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("📈 Nivel de rotación física")
-            status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
-            status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
-            status_counts.columns = ['Estado', 'Cantidad']
-            fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', hole=0.4,
-                             color_discrete_sequence=px.colors.qualitative.Safe)
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-        with c2:
-            st.subheader("⏳ Cronología de Ediciones")
-            if not df_completo['year'].dropna().empty:
-                fig_hist = px.histogram(df_completo, x='year', nbins=25, 
-                                        labels={'year': 'Año de Publicación', 'count': 'Volúmenes'},
-                                        color_discrete_sequence=['#1E3A8A'])
-                st.plotly_chart(fig_hist, use_container_width=True)
+        # Fila 2: Nivel de rotación física
+        st.subheader("📈 Nivel de rotación física")
+        status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
+        status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
+        status_counts.columns = ['Estado', 'Cantidad']
+        fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', hole=0.4,
+                         color_discrete_sequence=px.colors.qualitative.Safe)
+        st.plotly_chart(fig_pie, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Fila 3: Cronología de Ediciones
+        st.subheader("⏳ Cronología de Ediciones")
+        if not df_completo['year'].dropna().empty:
+            fig_hist = px.histogram(df_completo, x='year', nbins=25, 
+                                    labels={'year': 'Año de Publicación', 'count': 'Volúmenes'},
+                                    color_discrete_sequence=['#1E3A8A'])
+            st.plotly_chart(fig_hist, use_container_width=True)
 
     # --- PESTAÑA 2: NUEVO ANÁLISIS DETALLADO POR CDU ---
     with tab2:
         st.subheader("📊 Análisis de Volumen de Fondos por CDU / Categorías")
         
-        # Conteo de libros por categoría
         cat_counts = df_completo['categoria'].value_counts().reset_index()
         cat_counts.columns = ['Categoría', 'Volúmenes']
         
-        # Gráfico de barras horizontales interactivo
         fig_bar = px.bar(cat_counts, x='Volúmenes', y='Categoría', orientation='h',
                          text='Volúmenes', color='Volúmenes',
                          color_continuous_scale=px.colors.sequential.Blugrn)
@@ -264,7 +289,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("---")
         st.subheader("🔍 Desglose Métrico por Sección")
         
-        # Construir una tabla analítica: Volumen, % del total y Año medio por sección
+        # Construir tabla analítica base
         tabla_cdu = df_completo.groupby('categoria').agg(
             Volumenes=('record_id', 'count'),
             Edad_Media=('year', lambda x: int(x.mean()) if not np.isnan(x.mean()) else np.nan),
@@ -274,18 +299,58 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         tabla_cdu['% de la Colección'] = (tabla_cdu['Volumenes'] / total_docs * 100).round(2)
         tabla_cdu['% Rotación Seccional'] = (tabla_cdu['Prestados'] / tabla_cdu['Volumenes'] * 100).round(2)
         
-        # Reordenar y renombrar para la vista del usuario
         tabla_cdu = tabla_cdu[['categoria', 'Volumenes', '% de la Colección', 'Edad_Media', '% Rotación Seccional']]
         tabla_cdu.columns = ['Categoría / CDU', 'Nº Volúmenes', '% de la Colección', 'Año Medio Edición', '% de Uso (Prestados)']
         
-        st.dataframe(tabla_cdu.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
+        # Función interna para discriminar Infantil / Adultos de forma robusta
+        def es_infantil(categoria):
+            c = str(categoria).lower()
+            if "infantil" in c or "juvenil" in c:
+                return True
+            # Enfoque preventivo para extracción por longitud fija si empieza por letras clave
+            if tipo_analisis == "Longitud Fija (Primeros caracteres)" and c.startswith(('i', 'j')):
+                return True
+            return False
+
+        # Segmentar los dataframes mediante máscaras booleanas
+        es_inf = tabla_cdu['Categoría / CDU'].apply(es_infantil)
+        tabla_infantil = tabla_cdu[es_inf].copy()
+        tabla_adultos = tabla_cdu[~es_inf].copy()
+        
+        # Renderizado de la tabla de Adultos
+        st.markdown("### 👥 Colección de Adultos")
+        if not tabla_adultos.empty:
+            st.dataframe(tabla_adultos.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
+        else:
+            st.info("No se han detectado secciones pertenecientes al fondo de adultos.")
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Renderizado de la tabla Infantil
+        st.markdown("### 🧒 Colección Infantil / Juvenil")
+        if not tabla_infantil.empty:
+            st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
+        else:
+            st.info("No se han detectado secciones pertenecientes al fondo infantil/juvenil.")
+
+        st.markdown("---")
+
+        # Desplegable extra para verificar la bolsa de "Otros"
+        with st.expander("🔍 Inspeccionar los documentos clasificados en 'Otros'"):
+            df_otros = df_completo[df_completo['categoria'] == 'Otros']
+            if not df_otros.empty:
+                st.dataframe(
+                    df_otros[['signatura_real', 'titulo']].drop_duplicates().head(100), 
+                    use_container_width=True, hide_index=True
+                )
+            else:
+                st.success("¡Excelente! No hay ningún documento clasificado en la categoría 'Otros'.")
 
     # --- PESTAÑA 3: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab3:
         st.subheader("📋 Inventario de Títulos Extraídos")
         st.markdown("Utiliza el buscador integrado de la tabla para localizar títulos o signaturas específicas:")
         
-        # Mostrar columnas útiles incluyendo el nuevo campo "titulo"
         df_vista = df_completo[['record_id', 'signatura_real', 'categoria', 'titulo', 'year']].copy()
         df_vista.columns = ['ID Registro', 'Signatura', 'Categoría / CDU', 'Título del Documento', 'Año']
         
