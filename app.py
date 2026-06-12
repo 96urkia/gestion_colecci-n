@@ -481,7 +481,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("Utiliza el buscador integrado de la tabla para localizar títulos o signaturas específicas:")
         
         df_vista = df_completo[['record_id', 'signatura_real', 'categoria', 'titulo', 'year']].copy()
-        df_vista.columns = ['ID Registro', 'Signatura', 'Categoría / CDU', 'Título del Documento', 'Año', 'Sig. supl.']
+        df_vista.columns = ['ID Registro', 'Signatura', 'Categoría / CDU', 'Título del Documento', 'Año']
         
         st.dataframe(df_vista, use_container_width=True, hide_index=True)
 
