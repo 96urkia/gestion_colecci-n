@@ -433,11 +433,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.subheader("📊 Análisis de la Signatura Suplementaria")
         
         # CORREGIDO: Cambiado 'df' por 'df_completo'
-        if 'signatura_suplementaria' in df_completo.columns:
-            df_sup = df_completo[df_completo['signatura_suplementaria'].notna() & (df_completo['signatura_suplementaria'].astype(str).str.strip() != '')].copy()
+        if 'Sig. supl.' in df_completo.columns:
+            df_sup = df_completo[df_completo['Sig. supl.'].notna() & (df_completo['Sig. supl.'].astype(str).str.strip() != '')].copy()
             
             if not df_sup.empty:
-                df_sup['Codigo_Sup'] = df_sup['signatura_suplementaria'].astype(str).str.extract(r'^([A-Za-z0-9]+)')
+                df_sup['Codigo_Sup'] = df_sup['Sig. supl.'].astype(str).str.extract(r'^([A-Za-z0-9]+)')
                 
                 col1, col2 = st.columns(2)
                 
@@ -461,7 +461,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     
                 with st.expander("Ver desglose completo de signaturas suplementarias"):
                     st.dataframe(
-                        df_sup[['signatura_suplementaria', 'Codigo_Sup']].value_counts().reset_index(name='Total'),
+                        df_sup[['Sig. supl.', 'Codigo_Sup']].value_counts().reset_index(name='Total'),
                         use_container_width=True, hide_index=True
                     )
             else:
