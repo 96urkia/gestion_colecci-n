@@ -125,9 +125,13 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
             if re.search(r'^I\s+[12356789]', s): 
                 return "CDU Infantil"
 
-            # 5. INFANTIL / JUVENIL ESTÁNDAR (Narrativa/Ficción sin espacio, ej: I1, I2, JN)
-            if re.search(r'^I[0-3]', s) or re.search(r'\bJN\b', s): 
-                return "Infantil / Juvenil"
+            # 5. INFANTIL / JUVENIL ESTÁNDAR POR EDADES (Ficción/Narrativa)
+            match_inf = re.match(r'^(I[0-3])', s)
+            if match_inf:
+                return f"{match_inf.group(1)} (Infantil)"
+            
+            if re.search(r'\bJN\b', s): 
+                return "JN (Juvenil)"
             
             # 6. FICCIÓN ADULTOS (Narrativa, Poesía, Teatro)
             if re.search(r'\bN\s', s): return "Ficción / Narrativa"
@@ -305,16 +309,23 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         
         # Función interna para discriminar Infantil / Adultos de forma robusta
         # Función interna para discriminar Infantil / Adultos de forma robusta
+        # Función interna para discriminar Infantil / Adultos de forma robusta
         def es_infantil(categoria):
             c = str(categoria).lower()
+            
+            # 1. Si contiene las palabras clave explícitas
             if "infantil" in c or "juvenil" in c:
                 return True
+                
+            # 2. Si es un código directo de los que acabamos de separar
+            if c in ['i0', 'i1', 'i2', 'i3', 'jn']:
+                return True
             
-            # Recuperamos la configuración guardada en memoria
+            # 3. Recuperamos la configuración guardada en memoria para longitud fija
             tipo_guardado = st.session_state.get('tipo_analisis', '')
-            
             if tipo_guardado == "Longitud Fija (Primeros caracteres)" and c.startswith(('i', 'j')):
                 return True
+                
             return False
 
         # Segmentar los dataframes mediante máscaras booleanas
