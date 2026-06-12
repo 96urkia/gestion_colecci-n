@@ -340,61 +340,82 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
         st.markdown("---")
 
-        # 4. DESPLEGABLE CON LA AUDITORÍA DE DETALLE (CDU & EDADES)
+        # 4. DESPLEGABLE CON LA AUDITORÍA DE DETALLE (CORREGIDO SIN FALSOS POSITIVOS)
         with st.expander("🔍 Ver Auditoría Fina de Desviación por CDU y Secciones"):
             st.write("Este desglose calcula el porcentaje real que ocupa cada sección específica sobre el **total absoluto** de la biblioteca frente al modelo ideal regulado:")
             
-            pautas_detalladas = [
-                {"Sección": "Adultos - 0. Obras generales", "Ideal": 4.0, "Claves": ["0 -"]},
-                {"Sección": "Adultos - 1. Filosofía y psicología", "Ideal": 2.0, "Claves": ["1 -"]},
-                {"Sección": "Adultos - 2. Religión", "Ideal": 1.0, "Claves": ["2 -"]},
-                {"Sección": "Adultos - 3. Ciencias Sociales", "Ideal": 4.0, "Claves": ["3 -"]},
-                {"Sección": "Adultos - 5. Ciencias Puras", "Ideal": 4.0, "Claves": ["5 -"]},
-                {"Sección": "Adultos - 6. Ciencias Aplicadas", "Ideal": 5.0, "Claves": ["6 -"]},
-                {"Sección": "Adultos - 7. Arte. Deportes", "Ideal": 7.0, "Claves": ["7 -"]},
-                {"Sección": "Adultos - 8. Lingüística y Lit.", "Ideal": 4.0, "Claves": ["8 -"]},
-                {"Sección": "Adultos - Novela", "Ideal": 19.0, "Claves": ["ficción / narrativa"]},
-                {"Sección": "Adultos - Poesía", "Ideal": 1.0, "Claves": ["poesía"]},
-                {"Sección": "Adultos - Teatro", "Ideal": 1.0, "Claves": ["teatro"]},
-                {"Sección": "Adultos - Cómic", "Ideal": 4.0, "Claves": ["c (comic adultos)"]},
-                {"Sección": "Adultos - 9. Geografía e Historia", "Ideal": 9.0, "Claves": ["9 -"]},
-                {"Sección": "Infantil - Obras de conocimiento", "Ideal": 7.0, "Claves": ["cdu infantil"]},
-                {"Sección": "Infantil - Pre-lectores (I0)", "Ideal": 1.0, "Claves": ["i0"]},
-                {"Sección": "Infantil - Ficción (6-9 años)", "Ideal": 5.0, "Claves": ["i1", "i2"]},
-                {"Sección": "Infantil - Ficción (10-14 años)", "Ideal": 6.0, "Claves": ["i3", "jn"]},
-                {"Sección": "Infantil - Cómic (IC)", "Ideal": 1.0, "Claves": ["ic"]},
-            ]
+            # Definición formal de los objetivos ideales del Ministerio
+            ideales = {
+                "Adultos - 0. Obras generales": 4.0,
+                "Adultos - 1. Filosofía y psicología": 2.0,
+                "Adultos - 2. Religión": 1.0,
+                "Adultos - 3. Ciencias Sociales": 4.0,
+                "Adultos - 5. Ciencias Puras": 4.0,
+                "Adultos - 6. Ciencias Aplicadas": 5.0,
+                "Adultos - 7. Arte. Deportes": 7.0,
+                "Adultos - 8. Lingüística y Lit.": 4.0,
+                "Adultos - Novela": 19.0,
+                "Adultos - Poesía": 1.0,
+                "Adultos - Teatro": 1.0,
+                "Adultos - Cómic": 4.0,
+                "Adultos - 9. Geografía e Historia": 9.0,
+                "Infantil - Obras de conocimiento": 7.0,
+                "Infantil - Pre-lectores (I0)": 1.0,
+                "Infantil - Ficción (6-9 años)": 5.0,
+                "Infantil - Ficción (10-14 años)": 6.0,
+                "Infantil - Cómic (IC)": 1.0
+            }
 
-            lineas_auditoria = []
-            v_counts = df_completo['categoria'].value_counts()
-
-            for pauta in pautas_detalladas:
-                acumulado_docs = 0
-                for c_name, count in v_counts.items():
-                    c_low = c_name.lower()
-                    if any(k in c_low for k in pauta["Claves"]):
-                        # Evitar falsos positivos cruzados entre Infantil y Adulto en poesía/teatro/cómics
-                        if "infantil" in pauta["Sección"].lower() and "infantil" not in c_low and "ic" not in c_low and "jn" not in c_low and "i" not in c_low:
-                            continue
-                        if "adultos" in pauta["Sección"].lower() and ("infantil" in c_low or "juvenil" in c_low or "jn" in c_low):
-                            continue
-                        acumulado_docs += count
+            # Función de asignación exacta para evitar colisiones de texto (como 'ic' en 'ficción')
+            def clasificar_para_auditoria(cat):
+                c = str(cat).lower().strip()
                 
-                pct_real = (acumulado_docs / total_docs * 100) if total_docs > 0 else 0
-                desviacion = pct_real - pauta["Ideal"]
+                # 1. Filtros prioritarios por código de inicio (Infantil/Juvenil)
+                if c.startswith('i0'): return "Infantil - Pre-lectores (I0)"
+                if c.startswith('i1') or c.startswith('i2'): return "Infantil - Ficción (6-9 años)"
+                if c.startswith('i3') or c.startswith('jn'): return "Infantil - Ficción (10-14 años)"
+                if c.startswith('ic'): return "Infantil - Cómic (IC)"
+                if 'cdu infantil' in c: return "Infantil - Obras de conocimiento"
+                
+                # 2. Filtros específicos de Adultos/General
+                if 'c (comic adultos)' in c: return "Adultos - Cómic"
+                if 'teatro' in c and not ('infantil' in c or c.startswith('it')): return "Adultos - Teatro"
+                if 'poesía' in c and not ('infantil' in c or c.startswith('ip')): return "Adultos - Poesía"
+                if 'ficción / narrativa' in c or 'novela' in c: return "Adultos - Novela"
+                
+                # 3. Distribución por clases principales de la CDU para adultos
+                if c.startswith('0'): return "Adultos - 0. Obras generales"
+                if c.startswith('1'): return "Adultos - 1. Filosofía y psicología"
+                if c.startswith('2'): return "Adultos - 2. Religión"
+                if c.startswith('3'): return "Adultos - 3. Ciencias Sociales"
+                if c.startswith('5'): return "Adultos - 5. Ciencias Puras"
+                if c.startswith('6'): return "Adultos - 6. Ciencias Aplicadas"
+                if c.startswith('7'): return "Adultos - 7. Arte. Deportes"
+                if c.startswith('8'): return "Adultos - 8. Lingüística y Lit."
+                if c.startswith('9'): return "Adultos - 9. Geografía e Historia"
+                
+                return "Otros / No regulados explícitamente"
+
+            # Ejecutamos el mapeo limpio
+            df_completo['seccion_auditoria'] = df_completo['categoria'].apply(clasificar_para_auditoria)
+            conteos_auditoria = df_completo['seccion_auditoria'].value_counts()
+
+            # Construcción de la tabla final calculando las desviaciones reales
+            lineas_auditoria = []
+            for seccion, ideal in ideales.items():
+                total_seccion = conteos_auditoria.get(seccion, 0)
+                pct_real = (total_seccion / total_docs * 100) if total_docs > 0 else 0
+                desviacion = pct_real - ideal
                 
                 lineas_auditoria.append({
-                    "Sección Específica": pauta["Sección"],
-                    "Pauta %": f"{pauta['Ideal']:.1f}%",
+                    "Sección Específica": seccion,
+                    "Pauta %": f"{ideal:.1f}%",
                     "Real %": f"{pct_real:.1f}%",
                     "Desviación": f"{desviacion:+.1f}%"
                 })
 
             df_auditoria_fina = pd.DataFrame(lineas_auditoria)
             st.dataframe(df_auditoria_fina, use_container_width=True, hide_index=True)
-
-        st.markdown("---")
-
         # 5. GRÁFICOS ORIGINALES DE ROTACIÓN Y CRONOLOGÍA (Movidos abajo para limpieza)
         st.subheader("📈 Nivel de rotación física")
         status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
