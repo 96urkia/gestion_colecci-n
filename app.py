@@ -218,6 +218,7 @@ with st.sidebar:
                     if resultado is not None:
                         st.session_state['resultado'] = resultado
                         st.session_state['analizado'] = True
+                        st.session_state['tipo_analisis'] = tipo_analisis
                         st.rerun()
     else:
         st.success("✅ Datos cargados en memoria.")
@@ -303,12 +304,16 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         tabla_cdu.columns = ['Categoría / CDU', 'Nº Volúmenes', '% de la Colección', 'Año Medio Edición', '% de Uso (Prestados)']
         
         # Función interna para discriminar Infantil / Adultos de forma robusta
+        # Función interna para discriminar Infantil / Adultos de forma robusta
         def es_infantil(categoria):
             c = str(categoria).lower()
             if "infantil" in c or "juvenil" in c:
                 return True
-            # Enfoque preventivo para extracción por longitud fija si empieza por letras clave
-            if tipo_analisis == "Longitud Fija (Primeros caracteres)" and c.startswith(('i', 'j')):
+            
+            # Recuperamos la configuración guardada en memoria
+            tipo_guardado = st.session_state.get('tipo_analisis', '')
+            
+            if tipo_guardado == "Longitud Fija (Primeros caracteres)" and c.startswith(('i', 'j')):
                 return True
             return False
 
