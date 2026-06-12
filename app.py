@@ -258,7 +258,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     tab1, tab2, tab3 = st.tabs(["📊 Distribución y Uso", "📚 Análisis por CDU / Categorías", "📋 Explorador de Colección"])
 
     # --- PESTAÑA 1: DISTRIBUCIÓN Y USO GENERAL ---
-    # --- PESTAÑA 1: DISTRIBUCIÓN Y USO GENERAL ---
     with tab1:
         st.subheader("⚖️ Diagnóstico de la Colección según Pautas Oficiales")
         
@@ -389,8 +388,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         tabla_cdu.columns = ['Categoría / CDU', 'Nº Volúmenes', '% de la Colección', 'Año Medio Edición', '% de Uso (Prestados)']
         
         # Función interna para discriminar Infantil / Adultos de forma robusta
-        # Función interna para discriminar Infantil / Adultos de forma robusta
-        # Función interna para discriminar Infantil / Adultos de forma robusta
+      
         def es_infantil(categoria):
             c = str(categoria).lower()
             
@@ -443,8 +441,57 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             else:
                 st.success("¡Excelente! No hay ningún documento clasificado en la categoría 'Otros'.")
 
-    # --- PESTAÑA 3: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
-    with tab3:
+    # =====================================================================
+# sección 4: ANÁLISIS DE LA SIGNATURA SUPLEMENTARIA
+# =====================================================================
+        with tab3:
+        st.header("📊 Análisis de la Signatura Suplementaria")
+        
+        if 'signatura_suplementaria' in df.columns:
+            # Filtrar nulos y vacíos para trabajar solo con registros válidos
+            df_sup = df[df['signatura_suplementaria'].notna() & (df['signatura_suplementaria'].astype(str).str.strip() != '')].copy()
+            
+            if not df_sup.empty:
+                # Al igual que con la CDU, extraemos el prefijo o código principal 
+                # (por ejemplo: prefijos de sección, infantil, local, tipología, etc.)
+                df_sup['Codigo_Sup'] = df_sup['signatura_suplementaria'].astype(str).str.extract(r'^([A-Za-z0-9]+)')
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.metric("Registros con Signatura Suplementaria", len(df_sup))
+                    st.write("**Top 10 códigos/prefijos más frecuentes:**")
+                    
+                    # Conteo de frecuencias imitando el desglose de la CDU
+                    frecuencias_sup = (
+                        df_sup['Codigo_Sup']
+                        .value_counts()
+                        .head(10)
+                        .reset_index()
+                        .rename(columns={'index': 'Código/Prefijo', 'count': 'Frecuencia'})
+                    )
+                    st.dataframe(frecuencias_sup, use_container_width=True, hide_index=True)
+                    
+                with col2:
+                    st.write("**Distribución de los códigos principales:**")
+                    # Gráfico de barras que replica la visualización de la CDU
+                    chart_data = df_sup['Codigo_Sup'].value_counts().head(10)
+                    st.bar_chart(chart_data)
+                    
+                # Desglose detallado opcional para explorar el texto completo
+                with st.expander("Ver desglose completo de signaturas suplementarias"):
+                    st.dataframe(
+                        df_sup[['signatura_suplementaria', 'Codigo_Sup']].value_counts().reset_index(name='Total'),
+                        use_container_width=True
+                    )
+            else:
+                st.info("La columna existe, pero no contiene datos o está vacía.")
+        else:
+            st.error("No se ha encontrado la columna 'signatura_suplementaria' en el conjunto de datos actual.")
+    
+    
+    # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
+    with tab4:
         st.subheader("📋 Inventario de Títulos Extraídos")
         st.markdown("Utiliza el buscador integrado de la tabla para localizar títulos o signaturas específicas:")
         
