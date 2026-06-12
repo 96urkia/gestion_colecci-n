@@ -241,7 +241,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     
     # 2. NORMALIZACIÓN DE COLUMNAS: Se ejecuta AQUÍ para trabajar sobre los datos correctos
     for col in df_completo.columns:
-        if 'supl' in col.lower() and col != 'signatura_suplementaria':
+        if 'supl' in col.lower() and col != 'Sig. supl.':
             df_completo = df_completo.rename(columns={col: 'signatura_suplementaria'})
     
     # Bloque de KPIs comunes en la parte superior (Fila 1)
