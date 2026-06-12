@@ -258,8 +258,143 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     tab1, tab2, tab3 = st.tabs(["📊 Distribución y Uso", "📚 Análisis por CDU / Categorías", "📋 Explorador de Colección"])
 
     # --- PESTAÑA 1: DISTRIBUCIÓN Y USO GENERAL ---
+    # --- PESTAÑA 1: DISTRIBUCIÓN Y USO GENERAL ---
     with tab1:
-        # Fila 2: Nivel de rotación física
+        st.subheader("⚖️ Diagnóstico de la Colección según Pautas Oficiales")
+        
+        # 1. DETERMINACIÓN DE PAUTAS SEGÚN POBLACIÓN (Ministerio de Cultura / IFLA)
+        if poblacion_atendida <= 5000:
+            pauta_hab = 2.5
+            pauta_min, pauta_max = 4000, 5500
+        elif poblacion_atendida <= 10000:
+            pauta_hab = 2.5
+            pauta_min, pauta_max = 7000, 12500
+        elif poblacion_atendida <= 20000:
+            pauta_hab = 2.0
+            pauta_min, pauta_max = 12500, 20000
+        elif poblacion_atendida <= 50000:
+            pauta_hab = 2.0
+            pauta_min, pauta_max = 20000, 65000
+        elif poblacion_atendida <= 100000:
+            pauta_hab = 1.5
+            pauta_min, pauta_max = 45000, 80000
+        else:
+            pauta_hab = 1.5
+            pauta_min, pauta_max = 80000, 95000
+
+        # 2. GENERACIÓN DE ALERTAS DE VOLUMEN ABSOLUTO Y RATIO
+        col_al1, col_al2 = st.columns(2)
+        
+        with col_al1:
+            if total_docs < 2500:
+                st.error(f"🚨 **Alerta de Mínimo Absoluto:** IFLA establece un suelo de 2.500 obras por punto de servicio. Tu colección actual cuenta con **{total_docs:,}** volúmenes.")
+            elif total_docs < pauta_min:
+                st.warning(f"⚠️ **Déficit de Volumen:** Para tu rango de población se recomiendan entre {pauta_min:,} y {pauta_max:,} documentos. Tu fondo cuenta con **{total_docs:,}** volúmenes.")
+            elif total_docs > pauta_max:
+                st.info(f"ℹ️ **Colección Sobredimensionada:** El rango óptimo recomendado es de {pauta_min:,} a {pauta_max:,} doc. Cuentas con **{total_docs:,}** volúmenes (valora un expurgo estructural).")
+            else:
+                st.success(f"✅ **Volumen Óptimo:** Tu colección de **{total_docs:,}** volúmenes cumple el estándar del Ministerio ({pauta_min:,} - {pauta_max:,} doc.).")
+
+        with col_al2:
+            if docs_por_habitante < pauta_hab:
+                st.warning(f"⚠️ **Ratio por Habitante Bajo:** Dispones de **{docs_por_habitante:.2f}** doc./hab. La pauta del Ministerio para tu municipio exige un mínimo de **{pauta_hab}** doc./hab.")
+            else:
+                st.success(f"✅ **Ratio por Habitante Óptimo:** Tienes **{docs_por_habitante:.2f}** doc./hab., superando la recomendación mínima de **{pauta_hab}** doc./hab.")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # 3. AUDITORÍA DE MACRO-DISTRIBUCIÓN DE LA COLECCIÓN
+        st.write("#### 📊 Distribución Macroscópica del Fondo")
+        
+        def clasificar_macro(cat):
+            c = str(cat).lower()
+            if "dvd" in c or "audiovisual" in c:
+                return "Audiovisuales/Multimedia"
+            elif "infantil" in c or "juvenil" in c or "jn" in c or "ic" in c or "ip" in c or "it" in c:
+                return "Infantil/Juvenil"
+            else:
+                return "Adultos"
+
+        df_completo['macro_seccion'] = df_completo['categoria'].apply(clasificar_macro)
+        macro_counts = df_completo['macro_seccion'].value_counts()
+        
+        pct_adultos = (macro_counts.get("Adultos", 0) / total_docs * 100) if total_docs > 0 else 0
+        pct_infantil = (macro_counts.get("Infantil/Juvenil", 0) / total_docs * 100) if total_docs > 0 else 0
+        pct_audio = (macro_counts.get("Audiovisuales/Multimedia", 0) / total_docs * 100) if total_docs > 0 else 0
+
+        # Crear tabla comparativa visual
+        tabla_macro = pd.DataFrame({
+            "Macro-Sección": ["Adultos", "Infantil/Juvenil", "Audiovisuales/Multimedia"],
+            "Pauta Oficial": ["65.0%", "20.0%", "15.0%"],
+            "Tu Biblioteca": [f"{pct_adultos:.1f}%", f"{pct_infantil:.1f}%", f"{pct_audio:.1f}%"],
+            "Desviación": [f"{pct_adultos - 65:.1f}%", f"{pct_infantil - 20:.1f}%", f"{pct_audio - 15:.1f}%"]
+        })
+        st.dataframe(tabla_macro, use_container_width=True, hide_index=True)
+
+        # Pequeño aviso cualitativo para la sección infantil general
+        if pct_infantil < 20.0:
+            st.caption("💡 *Nota:* Tu sección infantil está por debajo del 20% recomendado. Considera desviar parte de las adquisiciones a este fondo.")
+        elif pct_infantil > 25.0:
+            st.caption("💡 *Nota:* Tu sección infantil supera la recomendación base (sobrepasa el 25% total). Es un fondo potente en tu biblioteca.")
+
+        st.markdown("---")
+
+        # 4. DESPLEGABLE CON LA AUDITORÍA DE DETALLE (CDU & EDADES)
+        with st.expander("🔍 Ver Auditoría Fina de Desviación por CDU y Secciones"):
+            st.write("Este desglose calcula el porcentaje real que ocupa cada sección específica sobre el **total absoluto** de la biblioteca frente al modelo ideal regulado:")
+            
+            pautas_detalladas = [
+                {"Sección": "Adultos - 0. Obras generales", "Ideal": 4.0, "Claves": ["0 -"]},
+                {"Sección": "Adultos - 1. Filosofía y psicología", "Ideal": 2.0, "Claves": ["1 -"]},
+                {"Sección": "Adultos - 2. Religión", "Ideal": 1.0, "Claves": ["2 -"]},
+                {"Sección": "Adultos - 3. Ciencias Sociales", "Ideal": 4.0, "Claves": ["3 -"]},
+                {"Sección": "Adultos - 5. Ciencias Puras", "Ideal": 4.0, "Claves": ["5 -"]},
+                {"Sección": "Adultos - 6. Ciencias Aplicadas", "Ideal": 5.0, "Claves": ["6 -"]},
+                {"Sección": "Adultos - 7. Arte. Deportes", "Ideal": 7.0, "Claves": ["7 -"]},
+                {"Sección": "Adultos - 8. Lingüística y Lit.", "Ideal": 4.0, "Claves": ["8 -"]},
+                {"Sección": "Adultos - Novela", "Ideal": 19.0, "Claves": ["ficción / narrativa"]},
+                {"Sección": "Adultos - Poesía", "Ideal": 1.0, "Claves": ["poesía"]},
+                {"Sección": "Adultos - Teatro", "Ideal": 1.0, "Claves": ["teatro"]},
+                {"Sección": "Adultos - Cómic", "Ideal": 4.0, "Claves": ["c (comic adultos)"]},
+                {"Sección": "Adultos - 9. Geografía e Historia", "Ideal": 9.0, "Claves": ["9 -"]},
+                {"Sección": "Infantil - Obras de conocimiento", "Ideal": 7.0, "Claves": ["cdu infantil"]},
+                {"Sección": "Infantil - Pre-lectores (I0)", "Ideal": 1.0, "Claves": ["i0"]},
+                {"Sección": "Infantil - Ficción (6-9 años)", "Ideal": 5.0, "Claves": ["i1", "i2"]},
+                {"Sección": "Infantil - Ficción (10-14 años)", "Ideal": 6.0, "Claves": ["i3", "jn"]},
+                {"Sección": "Infantil - Cómic (IC)", "Ideal": 1.0, "Claves": ["ic"]},
+            ]
+
+            lineas_auditoria = []
+            v_counts = df_completo['categoria'].value_counts()
+
+            for pauta in pautas_detalladas:
+                acumulado_docs = 0
+                for c_name, count in v_counts.items():
+                    c_low = c_name.lower()
+                    if any(k in c_low for k in pauta["Claves"]):
+                        # Evitar falsos positivos cruzados entre Infantil y Adulto en poesía/teatro/cómics
+                        if "infantil" in pauta["Sección"].lower() and "infantil" not in c_low and "ic" not in c_low and "jn" not in c_low and "i" not in c_low:
+                            continue
+                        if "adultos" in pauta["Sección"].lower() and ("infantil" in c_low or "juvenil" in c_low or "jn" in c_low):
+                            continue
+                        acumulado_docs += count
+                
+                pct_real = (acumulado_docs / total_docs * 100) if total_docs > 0 else 0
+                desviacion = pct_real - pauta["Ideal"]
+                
+                lineas_auditoria.append({
+                    "Sección Específica": pauta["Sección"],
+                    "Pauta %": f"{pauta['Ideal']:.1f}%",
+                    "Real %": f"{pct_real:.1f}%",
+                    "Desviación": f"{desviacion:+.1f}%"
+                })
+
+            df_auditoria_fina = pd.DataFrame(lineas_auditoria)
+            st.dataframe(df_auditoria_fina, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        # 5. GRÁFICOS ORIGINALES DE ROTACIÓN Y CRONOLOGÍA (Movidos abajo para limpieza)
         st.subheader("📈 Nivel de rotación física")
         status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
         status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
@@ -270,7 +405,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         
         st.markdown("---")
         
-        # Fila 3: Cronología de Ediciones
         st.subheader("⏳ Cronología de Ediciones")
         if not df_completo['year'].dropna().empty:
             fig_hist = px.histogram(df_completo, x='year', nbins=25, 
