@@ -234,6 +234,10 @@ with st.sidebar:
 # ==========================================
 # PANEL CENTRAL: CUADRO DE MANDO EN PESTAÑAS
 # ==========================================
+for col in df_completo.columns:
+    if 'supl' in col.lower() and col != 'signatura_suplementaria':
+        df_completo = df_completo.rename(columns={col: 'signatura_suplementaria'})
+        
 if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     df_completo, huerfanos = st.session_state['resultado']
     
@@ -429,45 +433,46 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 st.success("¡Excelente! No hay ningún documento clasificado en la categoría 'Otros'.")
 
     # --- PESTAÑA 3: ANÁLISIS DE LA SIGNATURA SUPLEMENTARIA ---
-    with tab3:
-        st.subheader("📊 Análisis de la Signatura Suplementaria")
+with tab3:
+    st.subheader("📊 Análisis de la Signatura Suplementaria")
+    
+    if 'signatura_suplementaria' in df_completo.columns:
+        # Filtrar registros que no estén vacíos
+        df_sup = df_completo[df_completo['signatura_suplementaria'].notna() & (df_completo['signatura_suplementaria'].astype(str).str.strip() != '')].copy()
         
-        # CORREGIDO: Cambiado 'df' por 'df_completo'
-        if 'signatura_suplementaria' in df_completo.columns:
-            df_sup = df_completo[df_completo['signatura_suplementaria'].notna() & (df_completo['signatura_suplementaria'].astype(str).str.strip() != '')].copy()
+        if not df_sup.empty:
+            # Extraer el prefijo alfanumérico
+            df_sup['Codigo_Sup'] = df_sup['signatura_suplementaria'].astype(str).str.extract(r'^([A-Za-z0-9]+)')
             
-            if not df_sup.empty:
-                df_sup['Codigo_Sup'] = df_sup['signatura_suplementaria'].astype(str).str.extract(r'^([A-Za-z0-9]+)')
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("Registros con Signatura Suplementaria", len(df_sup))
+                st.write("**Top 10 códigos/prefijos más frecuentes:**")
                 
-                col1, col2 = st.columns(2)
+                frecuencias_sup = (
+                    df_sup['Codigo_Sup']
+                    .value_counts()
+                    .head(10)
+                    .reset_index()
+                    .rename(columns={'Codigo_Sup': 'Código/Prefijo', 'count': 'Frecuencia'})
+                )
+                st.dataframe(frecuencias_sup, use_container_width=True, hide_index=True)
                 
-                with col1:
-                    st.metric("Registros con Signatura Suplementaria", len(df_sup))
-                    st.write("**Top 10 códigos/prefijos más frecuentes:**")
-                    
-                    frecuencias_sup = (
-                        df_sup['Codigo_Sup']
-                        .value_counts()
-                        .head(10)
-                        .reset_index()
-                        .rename(columns={'Codigo_Sup': 'Código/Prefijo', 'count': 'Frecuencia'})
-                    )
-                    st.dataframe(frecuencias_sup, use_container_width=True, hide_index=True)
-                    
-                with col2:
-                    st.write("**Distribución de los códigos principales:**")
-                    chart_data = df_sup['Codigo_Sup'].value_counts().head(10)
-                    st.bar_chart(chart_data)
-                    
-                with st.expander("Ver desglose completo de signaturas suplementarias"):
-                    st.dataframe(
-                        df_sup[['signatura_suplementaria', 'Codigo_Sup']].value_counts().reset_index(name='Total'),
-                        use_container_width=True, hide_index=True
-                    )
-            else:
-                st.info("La columna existe, pero no contiene datos o está vacía.")
+            with col2:
+                st.write("**Distribución de los códigos principales:**")
+                chart_data = df_sup['Codigo_Sup'].value_counts().head(10)
+                st.bar_chart(chart_data)
+                
+            with st.expander("Ver desglose completo de signaturas suplementarias"):
+                st.dataframe(
+                    df_sup[['signatura_suplementaria', 'Codigo_Sup']].value_counts().reset_index(name='Total'),
+                    use_container_width=True, hide_index=True
+                )
         else:
-            st.error("No se ha encontrado la columna 'signatura_suplementaria' en el conjunto de datos actual.")
+            st.info("La columna existe, pero no contiene datos o está vacía.")
+    else:
+        st.error("No se ha encontrado la columna 'signatura_suplementaria' en el conjunto de datos actual.")
     
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
