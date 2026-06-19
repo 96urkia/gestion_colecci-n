@@ -442,14 +442,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     generar_seccion_resumen(df_cat, cat, cat)
                     render_niveles(df_cat, "", cat)
 
-
-        # 4. Inicio del árbol
-        categorias = sorted(df_completo['categoria'].unique())
-        for cat in categorias:
-            df_cat = df_completo[df_completo['categoria'] == cat]
-            with st.expander(f"📚 {cat} ({len(df_cat)} volúmenes)"):
-                generar_seccion_resumen(df_cat, cat, cat) # Pasamos 'cat' como ruta base
-                render_niveles(df_cat, "", cat)
                 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
