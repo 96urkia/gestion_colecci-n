@@ -354,11 +354,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-  # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA COMPLETA) ---
+  # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA DINÁMICA) ---
     with tab3:
-        st.subheader("🔎 Análisis por secciones")
+        st.subheader("🔎 Análisis por secciones (Jerarquía)")
 
-        # 1. DEFINICIÓN DE FUNCIONES (Deben ir primero)
+        # 1. FUNCIONES (Definidas primero para evitar errores)
         def convertir_a_csv(df):
             cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
             df_export = df[cols_export].copy()
@@ -369,21 +369,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             vols = len(df_sub)
             if vols == 0: return
             
-            # Asegurar acceso a total_docs (si está definida globalmente en tu app)
             total = total_docs if 'total_docs' in globals() else len(df_completo)
-            
             pct_coll = (vols / total * 100)
-            edad_m = df_sub['year'].mean()
-            pct_prest = (df_sub['prestado'].sum() / vols * 100)
             
-            df_met = pd.DataFrame({
-                "Nº Volúmenes": [f"{vols:,}"],
-                "% Colección": [f"{pct_coll:.1f}%"],
-                "Edad Media": [f"{int(edad_m)}" if not np.isnan(edad_m) else "N/A"],
-                "% Préstamos": [f"{pct_prest:.1f}%"]
-            })
-            st.table(df_met)
-            
+            # Botón de descarga con hash único
             unique_hash = hash(tuple(df_sub.index.tolist()))
             st.download_button(
                 label=f"📥 Descargar: {nombre_nivel}",
@@ -394,47 +383,63 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             )
 
         def obtener_cdu_limpia(sig):
-            s = str(sig).strip().upper()
-            return re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', s).strip()
+            # Elimina prefijos I, JN, etc. para trabajar con la CDU pura
+            return re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', str(sig).strip().upper())
 
-        def render_arbol_recursivo(df, prefijo_padre, ruta):
-            nodos = set()
+        def render_niveles(df, prefijo_actual, ruta):
+            """Función recursiva para crear el árbol de niveles"""
+            # 1. Identificar nodos hijos directos
+            nodos_hijos = set()
             for sig in df['signatura_real'].unique():
                 cdu = obtener_cdu_limpia(sig)
-                if cdu.startswith(prefijo_padre):
-                    resto = cdu[len(prefijo_padre):].lstrip('. ()')
+                if cdu.startswith(prefijo_actual):
+                    resto = cdu[len(prefijo_actual):].lstrip('. ()')
+                    # Regex para capturar el siguiente bloque (número o paréntesis)
                     match = re.match(r'^([0-9]+|\([0-9]+\))', resto)
-                    if match: nodos.add(match.group(1))
+                    if match:
+                        nodos_hijos.add(match.group(1))
             
-            for nodo in sorted(list(nodos)):
-                nuevo_prefijo = f"{prefijo_padre} {nodo}".strip()
+            # 2. Renderizar cada nodo hijo
+            for nodo in sorted(list(nodos_hijos)):
+                nuevo_prefijo = f"{prefijo_actual} {nodo}".strip()
+                # Filtrar solo registros que pertenezcan a este nodo
                 df_hijo = df[df['signatura_real'].apply(obtener_cdu_limpia).str.startswith(nuevo_prefijo)]
                 
                 if not df_hijo.empty:
                     with st.expander(f"📁 {nodo} ({len(df_hijo)} volúmenes)"):
                         generar_seccion_resumen(df_hijo, nodo, f"{ruta}_{nodo}")
-                        # Recursión si hay más niveles
-                        if len(obtener_cdu_limpia(df_hijo['signatura_real'].iloc[0])) > len(nuevo_prefijo):
-                            render_arbol_recursivo(df_hijo, nuevo_prefijo, f"{ruta}_{nodo}")
+                        
+                        # Comprobar si este nodo tiene más niveles debajo
+                        # Si hay hijos, recursión. Si no, tabla de libros.
+                        hijos_del_hijo = set()
+                        for sig in df_hijo['signatura_real'].unique():
+                            c = obtener_cdu_limpia(sig)
+                            if c.startswith(nuevo_prefijo):
+                                r = c[len(nuevo_prefijo):].lstrip('. ()')
+                                m = re.match(r'^([0-9]+|\([0-9]+\))', r)
+                                if m: hijos_del_hijo.add(m.group(1))
+                        
+                        if hijos_del_hijo:
+                            render_niveles(df_hijo, nuevo_prefijo, f"{ruta}_{nodo}")
                         else:
                             st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
 
-        # 2. PROCESAMIENTO Y RENDERIZADO
+        # 2. RENDERIZADO POR SECCIONES
         df_completo['seccion'] = df_completo['signatura_real'].apply(lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos")
         
         tabs = st.tabs(["👥 Adultos", "🧸 Infantil / Juvenil"])
         for i, sec in enumerate(["Adultos", "Infantil / Juvenil"]):
             with tabs[i]:
                 df_sec = df_completo[df_completo['seccion'] == sec]
-                # Extraer raices
-                raices = sorted(list(set([re.match(r'^([0-9]+|\([0-9]+\)|[A-Z]+)', obtener_cdu_limpia(s)).group(1) 
-                                         for s in df_sec['signatura_real'].unique() if obtener_cdu_limpia(s)])))
+                # Raíces: los primeros bloques CDU
+                raices = sorted(list(set([re.match(r'^([0-9]+|\([0-9]+\))', obtener_cdu_limpia(s)).group(1) 
+                                         for s in df_sec['signatura_real'].unique() if re.match(r'^([0-9]+|\([0-9]+\))', obtener_cdu_limpia(s))])))
                 
                 for r in raices:
                     df_r = df_sec[df_sec['signatura_real'].apply(obtener_cdu_limpia).str.startswith(r)]
                     with st.expander(f"📚 {r} ({len(df_r)} volúmenes)"):
                         generar_seccion_resumen(df_r, r, f"{sec}_{r}")
-                        render_arbol_recursivo(df_r, r, f"{sec}_{r}")
+                        render_niveles(df_r, r, f"{sec}_{r}")
                 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
