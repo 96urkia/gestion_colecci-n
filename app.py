@@ -354,7 +354,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-  # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA DINÁMICA CON PROMEDIOS) ---
+  # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA DINÁMICA CON PROMEDIOS EN COLUMNAS) ---
     with tab3:
         st.subheader("🔎 Análisis por secciones (Jerarquía)")
     
@@ -365,7 +365,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             df_export['codigo de barras'] = df['record_id'] if 'record_id' in df.columns else np.nan
             df_export['cdu'] = df['signatura_real'] if 'signatura_real' in df.columns else ""
             df_export['titulo'] = df['titulo'] if 'titulo' in df.columns else ""
-            df_export['autor'] = "No detectado"  # Marcador de posición (no extraído en la carga original)
+            df_export['autor'] = "No detectado"
             
             if 'prestado' in df.columns:
                 df_export['prestamo'] = df['prestado'].map({True: 'yes', False: 'not'})
@@ -376,15 +376,18 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
     
         def mostrar_tabla_promedios(df_sub, total_coleccion):
-            """Calcula y muestra la tabla resumida con los promedios solicitados."""
+            """Calcula y muestra la tabla resumida con las métricas distribuidas en columnas."""
             avg_year = int(df_sub['year'].mean()) if not df_sub['year'].dropna().empty else "N/A"
-            pct_prestamos = (df_sub['prestado'].sum() / len(df_sub) * 100) if len(df_sub) > 0 else 0
+            pct_uso = (df_sub['prestado'].sum() / len(df_sub) * 100) if len(df_sub) > 0 else 0
             pct_col = (len(df_sub) / total_coleccion * 100) if total_coleccion > 0 else 0
             
-            df_promedios = pd.DataFrame({
-                "Métrica de la Sección": ["Año Promedio Edición", "% de Préstamos (Uso)", "% sobre el Total de la Colección"],
-                "Valor": [str(avg_year), f"{pct_prestamos:.2f}%", f"{pct_col:.2f}%"]
-            })
+            # Formatear la estructura en columnas (Fila única de datos)
+            df_promedios = pd.DataFrame([{
+                "Volúmenes": len(df_sub),
+                "Año Promedio": avg_year,
+                "% Uso (Préstamos)": f"{pct_uso:.2f}%",
+                "% sobre Total Colección": f"{pct_col:.2f}%"
+            }])
             st.dataframe(df_promedios, use_container_width=True, hide_index=True)
 
         def generar_seccion_resumen(df_sub, nombre_nivel, ruta_completa):
@@ -392,7 +395,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             
             unique_hash = hash(tuple(df_sub.index.tolist()))
             st.download_button(
-                label=f"📥 Descargar CSV de esta sección: {nombre_nivel}",
+                label=f"📥 Descargar CSV: {nombre_nivel}",
                 data=convertir_a_csv(df_sub),
                 file_name=f"export_{str(nombre_nivel).replace(' ', '_')[:20]}.csv",
                 mime="text/csv",
@@ -449,7 +452,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     
                     # CASO A: Nodo simple sin más subdivisiones numéricas
                     if len(nodos_l2) == 1 and nodos_l2[0] == n1:
-                        with st.expander(f"📚 {n1} ({len(df_n1)} volúmenes)"):
+                        with st.expander(f"📚 {n1}"):
                             generar_seccion_resumen(df_n1, n1, f"{sec}_L1_{n1}")
                             mostrar_tabla_promedios(df_n1, total_docs)
                     
@@ -464,7 +467,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             df_n2['Nivel_3'] = df_n2['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 3))
                             nodos_l3 = sorted(df_n2['Nivel_3'].unique())
                             
-                            with st.expander(f"📁 Subnivel: {n2} ({len(df_n2)} volúmenes)"):
+                            with st.expander(f"📁 Subnivel: {n2}"):
                                 generar_seccion_resumen(df_n2, n2, f"{sec}_L2_{n2}")
                                 
                                 # Si no se subdivide más, mostramos los promedios globales de este subnivel
@@ -474,7 +477,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     # Desglose específico para cada Nivel 3
                                     for n3 in nodos_l3:
                                         df_n3 = df_n2[df_n2['Nivel_3'] == n3]
-                                        st.markdown(f"**📖 Específico: {n3}** ({len(df_n3)} vol.)")
+                                        st.markdown(f"**📖 Específico: {n3}**")
                                         mostrar_tabla_promedios(df_n3, total_docs)
                         st.divider()
                 
