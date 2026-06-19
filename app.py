@@ -402,33 +402,67 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 key=f"dl_{ruta_completa}_{unique_hash}"
             )
     
-        def obtener_cdu_limpia(sig):
-            return re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', str(sig).strip().upper())
+        def obtener_prefijo_dinamico(sig, seccion, nivel):
+            """
+            Extrae el prefijo de clasificación aislando las secciones fijas de edad (I0-I3, JN)
+            y permitiendo el desglose jerárquico en las CDU de conocimientos.
+            """
+            sig = str(sig).strip().upper()
+            if not sig or sig == "NAN": 
+                return "Sin clasificar"
     
-        def obtener_prefijo(cdu, nivel):
-            cdu = str(cdu).strip()
-            if not cdu: return "Sin clasificar"
-    
-            if cdu[0].isdigit():
-                match = re.match(r'^([0-9]+)', cdu)
-                if match:
-                    num = match.group(1)
-                    return num[:min(nivel, len(num))]
-            
-            if cdu.startswith('('):
-                match = re.match(r'^(\([0-9]+\))', cdu)
+            if seccion == "Adultos":
+                # Lógica estándar de Adultos
+                if sig[0].isdigit():
+                    match = re.match(r'^([0-9]+)', sig)
+                    if match:
+                        num = match.group(1)
+                        return num[:min(nivel, len(num))]
+                if sig.startswith('('):
+                    match = re.match(r'^(\([0-9]+\))', sig)
+                    if match: return match.group(1)
+                match = re.match(r'^([A-Za-z]+)', sig)
                 if match: return match.group(1)
-    
-            match = re.match(r'^([A-Za-z]+)', cdu)
-            if match: return match.group(1).upper()
-    
-            return cdu[:nivel]
+                return sig[:nivel]
+                
+            else: 
+                # --- SECCIÓN INFANTIL / JUVENIL ---
+                
+                # CASO A: Filtro estricto por Edades / Ficción (I0, I1, I2, I3, JN, IJ, J sin espacio posterior)
+                # Si encuentra estos patrones al inicio, devuelve la sección limpia e ignora el apellido del autor.
+                match_edad = re.match(r'^(I[0-3]|JN|IJ|J)(?:\s|$)', sig)
+                if match_edad:
+                    return match_edad.group(1)
+                
+                # CASO B: CDU de Conocimientos Infantil (Formatos con espacio: 'I 1', 'I 50', 'I 824')
+                match_conoc = re.match(r'^I\s+([0-9\(\A-Z].*)', sig)
+                if match_conoc:
+                    cdu_interna = match_conoc.group(1).strip()
+                    if cdu_interna and cdu_interna[0].isdigit():
+                        match = re.match(r'^([0-9]+)', cdu_interna)
+                        if match:
+                            num = match.group(1)
+                            return f"I {num[:min(nivel, len(num))]}"
+                    if cdu_interna.startswith('('):
+                        match = re.match(r'^(\([0-9]+\))', cdu_interna)
+                        if match: return f"I {match.group(1)}"
+                    match = re.match(r'^([A-Za-z]+)', cdu_interna)
+                    if match: return f"I {match.group(1)}"
+                    return f"I {cdu_interna[:nivel]}"
+                
+                # Fallback de seguridad para formatos alternativos no estandarizados
+                sig_limpia = re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', sig).strip()
+                if sig_limpia and sig_limpia[0].isdigit():
+                    match = re.match(r'^([0-9]+)', sig_limpia)
+                    if match:
+                        num = match.group(1)
+                        return num[:min(nivel, len(num))]
+                return sig[:nivel]
     
         # 2. RENDERIZADO JERÁRQUICO
         df_completo['seccion'] = df_completo['signatura_real'].apply(
             lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos"
         )
-        df_completo['cdu_limpia'] = df_completo['signatura_real'].apply(obtener_cdu_limpia)
     
         tabs = st.tabs(["👥 Adultos", "🧸 Infantil / Juvenil"])
         for i, sec in enumerate(["Adultos", "Infantil / Juvenil"]):
@@ -440,23 +474,24 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     continue
     
                 # --- NIVEL 1 ---
-                df_sec['Nivel_1'] = df_sec['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 1))
+                df_sec['Nivel_1'] = df_sec['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 1))
                 nodos_l1 = sorted(df_sec['Nivel_1'].unique())
                 
                 for n1 in nodos_l1:
                     df_n1 = df_sec[df_sec['Nivel_1'] == n1].copy()
                     
                     # --- NIVEL 2 ---
-                    df_n1['Nivel_2'] = df_n1['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 2))
+                    df_n1['Nivel_2'] = df_n1['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 2))
                     nodos_l2 = sorted(df_n1['Nivel_2'].unique())
                     
-                    # CASO A: Nodo simple sin más subdivisiones numéricas
+                    # CASO CORTE (Nodos planos como I0, I1, JN): Al devolver siempre el mismo código en todos los niveles,
+                    # len(nodos_l2) será igual a 1 y entrará directamente aquí como un único bloque limpio.
                     if len(nodos_l2) == 1 and nodos_l2[0] == n1:
                         with st.expander(f"📚 {n1}"):
                             generar_seccion_resumen(df_n1, n1, f"{sec}_L1_{n1}")
                             mostrar_tabla_promedios(df_n1, total_docs)
                     
-                    # CASO B: Hay profundidad jerárquica
+                    # CASO JERÁRQUICO (Para las CDU de Conocimientos como I 5 -> I 50 -> I 504)
                     else:
                         st.markdown(f"### 🗄️ Nivel Principal: {n1} ({len(df_n1)} volúmenes)")
                         
@@ -464,17 +499,16 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             df_n2 = df_n1[df_n1['Nivel_2'] == n2].copy()
                             
                             # --- NIVEL 3 ---
-                            df_n2['Nivel_3'] = df_n2['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 3))
+                            df_n2['Nivel_3'] = df_n2['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 3))
                             nodos_l3 = sorted(df_n2['Nivel_3'].unique())
                             
                             with st.expander(f"📁 Subnivel: {n2}"):
                                 generar_seccion_resumen(df_n2, n2, f"{sec}_L2_{n2}")
                                 
-                                # Si no se subdivide más, mostramos los promedios globales de este subnivel
                                 if len(nodos_l3) == 1 and nodos_l3[0] == n2:
                                     mostrar_tabla_promedios(df_n2, total_docs)
                                 else:
-                                    # Desglose específico para cada Nivel 3
+                                    # Desglose de tercer nivel interno
                                     for n3 in nodos_l3:
                                         df_n3 = df_n2[df_n2['Nivel_3'] == n3]
                                         st.markdown(f"**📖 Específico: {n3}**")
