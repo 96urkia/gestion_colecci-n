@@ -432,14 +432,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             # Si no hay más niveles, tabla de datos
                             st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
 
-        # 4. Inicio del árbol (Filtrando categorías vacías)
-        for cat in sorted(df_completo['categoria'].unique()):
-            df_cat = df_completo[df_completo['categoria'] == cat]
-            # Solo mostramos si la categoría contiene al menos un libro
-            if len(df_cat) > 0:
-                with st.expander(f"📚 {cat} ({len(df_cat)} volúmenes)"):
-                    generar_seccion_resumen(df_cat, cat, cat)
-                    render_niveles(df_cat, "", cat)
 
         # 4. Inicio del árbol
         categorias = sorted(df_completo['categoria'].unique())
