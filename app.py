@@ -355,13 +355,14 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
    # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (ÁRBOL DINÁMICO INFINITO) ---
+    # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (JERARQUÍA DINÁMICA) ---
     with tab3:
         st.subheader("🔎 Análisis exhaustivo por CDU")
-        st.markdown("Explora la jerarquía topográfica. Los niveles se despliegan automáticamente según la estructura de tu signatura.")
-
-        # 1. Función para generar métricas (igual que antes)
+        
+        # 1. Función para generar la tabla de métricas
         def generar_tabla_metricas(df_sub):
             vols = len(df_sub)
+            if vols == 0: return pd.DataFrame()
             pct_coll = (vols / total_docs * 100)
             edad_m = df_sub['year'].mean()
             pct_prest = (df_sub['prestado'].sum() / vols * 100)
@@ -372,61 +373,46 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 "% Préstamos": [f"{pct_prest:.1f}%"]
             })
 
-        # 2. Función para crear estructura de árbol infinita
-        def crear_arbol(df):
-            # Usamos la signatura original tal cual
-            arbol = {}
-            for _, row in df.iterrows():
-                sig = str(row['signatura_real']).strip()
-                # Dividimos la signatura en partes significativas (separadas por espacio, punto, o paréntesis)
-                partes = [p for p in re.split(r'([\s\.\(\)]+)', sig) if p.strip()]
-                
-                nodo = arbol
-                for parte in partes:
-                    if parte not in nodo:
-                        nodo[parte] = {'_data': [], '_children': {}}
-                    nodo = nodo[parte]['_children']
-                
-                # Guardamos la fila en el último nodo alcanzado
-                # (Para simplificar, acumulamos los registros en un nivel hoja)
-                # Aquí podrías ajustar la lógica si quieres que cada nivel tenga sus libros
-            return arbol
+        # 2. Función recursiva para renderizar niveles infinitos
+        def render_niveles(df_actual, prefijo_actual=""):
+            # Obtenemos los siguientes segmentos posibles
+            # Dividimos la signatura basándonos en puntos, espacios o paréntesis
+            def extraer_siguiente_nivel(sig, prefijo):
+                if not sig.startswith(prefijo): return None
+                resto = sig[len(prefijo):].lstrip('. ()')
+                # Extraemos el primer bloque significativo (un número o una cadena de letras)
+                match = re.match(r'^([^. \(\)]+)', resto)
+                return match.group(1) if match else None
 
-        # 3. Función recursiva para renderizar
-        def render_arbol(nodo, df_actual, nivel=1):
-            for parte, contenido in nodo.items():
-                # Filtramos el sub-df para esta parte específica
-                # Usamos un filtro de cadena simple para identificar la rama
-                df_sub = df_actual[df_actual['signatura_real'].str.contains(re.escape(parte), na=False)]
+            # Identificar todos los posibles nodos hijos únicos desde este punto
+            opciones = set()
+            for sig in df_actual['signatura_real'].unique():
+                sig = str(sig)
+                hijo = extraer_siguiente_nivel(sig, prefijo_actual)
+                if hijo:
+                    opciones.add(hijo)
+
+            # Renderizar cada opción como un expander
+            for hijo in sorted(list(opciones)):
+                nuevo_prefijo = f"{prefijo_actual} {hijo}".strip()
+                df_hijo = df_actual[df_actual['signatura_real'].str.startswith(nuevo_prefijo, na=False)]
                 
-                count = len(df_sub)
-                if count == 0: continue
-                
-                with st.expander(f"📁 Nivel {nivel}: {parte} ({count} volúmenes)"):
-                    st.table(generar_tabla_metricas(df_sub))
+                with st.expander(f"📁 {hijo} ({len(df_hijo)} volúmenes)"):
+                    st.table(generar_tabla_metricas(df_hijo))
                     
-                    # Si tiene hijos, recursividad
-                    if contenido['_children']:
-                        render_arbol(contenido['_children'], df_sub, nivel + 1)
-                    else:
-                        # Si es hoja, mostramos la tabla de libros
-                        st.dataframe(df_sub[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                    # Llamada recursiva: si existen niveles más profundos, los renderiza
+                    render_niveles(df_hijo, nuevo_prefijo)
+                    
+                    # Si ya no hay niveles más profundos, mostramos los libros
+                    if len(df_hijo) > 0 and not any(extraer_siguiente_nivel(s, nuevo_prefijo) for s in df_hijo['signatura_real']):
+                        st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
 
-        # Ejecución del árbol
-        # Nota: Adaptación para tu flujo de datos actual
-        # He ajustado la lógica para que sea más robusta respetando tu 'signatura_real'
-        df_arbol_proc = df_completo.copy()
-        
-        # Agrupamos por la signatura completa para mostrar el despliegue
-        # Si prefieres una vista más compacta, podemos usar el nivel de categorías
-        st.info("Desplegando estructura jerárquica original...")
-        
-        # Renderizado de nivel raíz basado en categorías estándar
-        for cat in df_arbol_proc['categoria'].unique():
-            df_cat = df_arbol_proc[df_arbol_proc['categoria'] == cat]
+        # Inicio del árbol desde las categorías base
+        for cat in sorted(df_completo['categoria'].unique()):
+            df_cat = df_completo[df_completo['categoria'] == cat]
             with st.expander(f"📚 {cat} ({len(df_cat)} volúmenes)"):
                 st.table(generar_tabla_metricas(df_cat))
-                st.dataframe(df_cat[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                render_niveles(df_cat)
 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
