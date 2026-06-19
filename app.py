@@ -355,118 +355,118 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
   # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA DINÁMICA) ---
-with tab3:
-    st.subheader("🔎 Análisis por secciones (Jerarquía)")
-
-    # 1. FUNCIONES
-    def convertir_a_csv(df):
-        cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
-        # Evitamos errores filtrando solo las columnas que realmente existan en tu df
-        cols_disp = [c for c in cols_export if c in df.columns]
-        df_export = df[cols_disp].copy()
-        
-        rename_dict = {'record_id': 'Nº Registro', 'signatura_real': 'CDU / Signatura', 
-                       'titulo': 'Título', 'year': 'Año', 'prestamos': 'Nº Préstamos', 'prestado': '¿Prestado?'}
-        df_export.rename(columns=rename_dict, inplace=True)
-        return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
-
-    def generar_seccion_resumen(df_sub, nombre_nivel, ruta_completa):
-        if df_sub.empty: return
-        
-        unique_hash = hash(tuple(df_sub.index.tolist()))
-        st.download_button(
-            label=f"📥 Descargar CSV: {nombre_nivel}",
-            data=convertir_a_csv(df_sub),
-            file_name=f"export_{str(nombre_nivel).replace(' ', '_')[:20]}.csv",
-            mime="text/csv",
-            key=f"dl_{ruta_completa}_{unique_hash}"
+    with tab3:
+        st.subheader("🔎 Análisis por secciones (Jerarquía)")
+    
+        # 1. FUNCIONES
+        def convertir_a_csv(df):
+            cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
+            # Evitamos errores filtrando solo las columnas que realmente existan en tu df
+            cols_disp = [c for c in cols_export if c in df.columns]
+            df_export = df[cols_disp].copy()
+            
+            rename_dict = {'record_id': 'Nº Registro', 'signatura_real': 'CDU / Signatura', 
+                           'titulo': 'Título', 'year': 'Año', 'prestamos': 'Nº Préstamos', 'prestado': '¿Prestado?'}
+            df_export.rename(columns=rename_dict, inplace=True)
+            return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
+    
+        def generar_seccion_resumen(df_sub, nombre_nivel, ruta_completa):
+            if df_sub.empty: return
+            
+            unique_hash = hash(tuple(df_sub.index.tolist()))
+            st.download_button(
+                label=f"📥 Descargar CSV: {nombre_nivel}",
+                data=convertir_a_csv(df_sub),
+                file_name=f"export_{str(nombre_nivel).replace(' ', '_')[:20]}.csv",
+                mime="text/csv",
+                key=f"dl_{ruta_completa}_{unique_hash}"
+            )
+    
+        def obtener_cdu_limpia(sig):
+            # Elimina prefijos I, JN, etc. para trabajar con la CDU pura
+            return re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', str(sig).strip().upper())
+    
+        def obtener_prefijo(cdu, nivel):
+            """Extrae la raíz de la CDU según la profundidad (1, 2 o 3 caracteres numéricos)."""
+            cdu = str(cdu).strip()
+            if not cdu: return "Sin clasificar"
+    
+            # 1. Si empieza con un número (Ej. '821.1', '004')
+            if cdu[0].isdigit():
+                match = re.match(r'^([0-9]+)', cdu)
+                if match:
+                    num = match.group(1)
+                    return num[:min(nivel, len(num))]
+            
+            # 2. Si empieza con paréntesis (Ej. '(038)') -> No se subdivide numéricamente
+            if cdu.startswith('('):
+                match = re.match(r'^(\([0-9]+\))', cdu)
+                if match: return match.group(1)
+    
+            # 3. Si son letras (Ej. 'DVD', 'N') -> Tampoco se subdivide numéricamente
+            match = re.match(r'^([A-Za-z]+)', cdu)
+            if match: return match.group(1).upper()
+    
+            return cdu[:nivel]
+    
+        # 2. RENDERIZADO POR SECCIONES
+        # Asignamos sección general
+        df_completo['seccion'] = df_completo['signatura_real'].apply(
+            lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos"
         )
-
-    def obtener_cdu_limpia(sig):
-        # Elimina prefijos I, JN, etc. para trabajar con la CDU pura
-        return re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', str(sig).strip().upper())
-
-    def obtener_prefijo(cdu, nivel):
-        """Extrae la raíz de la CDU según la profundidad (1, 2 o 3 caracteres numéricos)."""
-        cdu = str(cdu).strip()
-        if not cdu: return "Sin clasificar"
-
-        # 1. Si empieza con un número (Ej. '821.1', '004')
-        if cdu[0].isdigit():
-            match = re.match(r'^([0-9]+)', cdu)
-            if match:
-                num = match.group(1)
-                return num[:min(nivel, len(num))]
-        
-        # 2. Si empieza con paréntesis (Ej. '(038)') -> No se subdivide numéricamente
-        if cdu.startswith('('):
-            match = re.match(r'^(\([0-9]+\))', cdu)
-            if match: return match.group(1)
-
-        # 3. Si son letras (Ej. 'DVD', 'N') -> Tampoco se subdivide numéricamente
-        match = re.match(r'^([A-Za-z]+)', cdu)
-        if match: return match.group(1).upper()
-
-        return cdu[:nivel]
-
-    # 2. RENDERIZADO POR SECCIONES
-    # Asignamos sección general
-    df_completo['seccion'] = df_completo['signatura_real'].apply(
-        lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos"
-    )
-    # Limpiamos la CDU por adelantado para optimizar el rendimiento
-    df_completo['cdu_limpia'] = df_completo['signatura_real'].apply(obtener_cdu_limpia)
-
-    tabs = st.tabs(["👥 Adultos", "🧸 Infantil / Juvenil"])
-    for i, sec in enumerate(["Adultos", "Infantil / Juvenil"]):
-        with tabs[i]:
-            df_sec = df_completo[df_completo['seccion'] == sec].copy()
-            
-            if df_sec.empty:
-                st.info(f"No hay registros en la sección {sec}.")
-                continue
-
-            # --- CÁLCULO DE NIVEL 1 ---
-            df_sec['Nivel_1'] = df_sec['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 1))
-            nodos_l1 = sorted(df_sec['Nivel_1'].unique())
-            
-            for n1 in nodos_l1:
-                df_n1 = df_sec[df_sec['Nivel_1'] == n1].copy()
+        # Limpiamos la CDU por adelantado para optimizar el rendimiento
+        df_completo['cdu_limpia'] = df_completo['signatura_real'].apply(obtener_cdu_limpia)
+    
+        tabs = st.tabs(["👥 Adultos", "🧸 Infantil / Juvenil"])
+        for i, sec in enumerate(["Adultos", "Infantil / Juvenil"]):
+            with tabs[i]:
+                df_sec = df_completo[df_completo['seccion'] == sec].copy()
                 
-                # --- CÁLCULO DE NIVEL 2 ---
-                df_n1['Nivel_2'] = df_n1['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 2))
-                nodos_l2 = sorted(df_n1['Nivel_2'].unique())
+                if df_sec.empty:
+                    st.info(f"No hay registros en la sección {sec}.")
+                    continue
+    
+                # --- CÁLCULO DE NIVEL 1 ---
+                df_sec['Nivel_1'] = df_sec['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 1))
+                nodos_l1 = sorted(df_sec['Nivel_1'].unique())
                 
-                # CASO A: No hay subdivisiones posibles (Ej. 'DVD' o solo existe un tipo exacto de dígito)
-                if len(nodos_l2) == 1 and nodos_l2[0] == n1:
-                    with st.expander(f"📚 {n1} ({len(df_n1)} volúmenes)"):
-                        generar_seccion_resumen(df_n1, n1, f"{sec}_L1_{n1}")
-                        st.dataframe(df_n1[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
-                
-                # CASO B: Hay profundidad jerárquica
-                else:
-                    st.markdown(f"### 🗄️ Nivel Principal: {n1} ({len(df_n1)} volúmenes)")
+                for n1 in nodos_l1:
+                    df_n1 = df_sec[df_sec['Nivel_1'] == n1].copy()
                     
-                    for n2 in nodos_l2:
-                        df_n2 = df_n1[df_n1['Nivel_2'] == n2].copy()
+                    # --- CÁLCULO DE NIVEL 2 ---
+                    df_n1['Nivel_2'] = df_n1['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 2))
+                    nodos_l2 = sorted(df_n1['Nivel_2'].unique())
+                    
+                    # CASO A: No hay subdivisiones posibles (Ej. 'DVD' o solo existe un tipo exacto de dígito)
+                    if len(nodos_l2) == 1 and nodos_l2[0] == n1:
+                        with st.expander(f"📚 {n1} ({len(df_n1)} volúmenes)"):
+                            generar_seccion_resumen(df_n1, n1, f"{sec}_L1_{n1}")
+                            st.dataframe(df_n1[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                    
+                    # CASO B: Hay profundidad jerárquica
+                    else:
+                        st.markdown(f"### 🗄️ Nivel Principal: {n1} ({len(df_n1)} volúmenes)")
                         
-                        # --- CÁLCULO DE NIVEL 3 ---
-                        df_n2['Nivel_3'] = df_n2['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 3))
-                        nodos_l3 = sorted(df_n2['Nivel_3'].unique())
-                        
-                        with st.expander(f"📁 Subnivel: {n2} ({len(df_n2)} volúmenes)"):
-                            generar_seccion_resumen(df_n2, n2, f"{sec}_L2_{n2}")
+                        for n2 in nodos_l2:
+                            df_n2 = df_n1[df_n1['Nivel_2'] == n2].copy()
                             
-                            # Si no hay subdivisión en Nivel 3, mostramos tabla directa
-                            if len(nodos_l3) == 1 and nodos_l3[0] == n2:
-                                st.dataframe(df_n2[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
-                            else:
-                                # Mostramos el Nivel 3 dividido en secciones de texto para evitar el límite de anidación de Streamlit
-                                for n3 in nodos_l3:
-                                    df_n3 = df_n2[df_n2['Nivel_3'] == n3]
-                                    st.markdown(f"**📖 Específico: {n3}** ({len(df_n3)} vol.)")
-                                    st.dataframe(df_n3[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
-                    st.divider() # Línea de separación para el siguiente Nivel 1
+                            # --- CÁLCULO DE NIVEL 3 ---
+                            df_n2['Nivel_3'] = df_n2['cdu_limpia'].apply(lambda x: obtener_prefijo(x, 3))
+                            nodos_l3 = sorted(df_n2['Nivel_3'].unique())
+                            
+                            with st.expander(f"📁 Subnivel: {n2} ({len(df_n2)} volúmenes)"):
+                                generar_seccion_resumen(df_n2, n2, f"{sec}_L2_{n2}")
+                                
+                                # Si no hay subdivisión en Nivel 3, mostramos tabla directa
+                                if len(nodos_l3) == 1 and nodos_l3[0] == n2:
+                                    st.dataframe(df_n2[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                                else:
+                                    # Mostramos el Nivel 3 dividido en secciones de texto para evitar el límite de anidación de Streamlit
+                                    for n3 in nodos_l3:
+                                        df_n3 = df_n2[df_n2['Nivel_3'] == n3]
+                                        st.markdown(f"**📖 Específico: {n3}** ({len(df_n3)} vol.)")
+                                        st.dataframe(df_n3[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                        st.divider() # Línea de separación para el siguiente Nivel 1
                 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
