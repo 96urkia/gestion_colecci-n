@@ -354,29 +354,20 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-   # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (JERARQUÍA DINÁMICA CONTROLADA) ---
+   # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (JERARQUÍA FILTRADA) ---
     with tab3:
         st.subheader("🔎 Análisis exhaustivo por CDU")
-        st.markdown("Explora la jerarquía de tu biblioteca. Haz clic en los niveles para desplegar sus subdivisiones directas.")
+        st.markdown("Explora solo las secciones con volúmenes registrados.")
 
-        # 1. Función para convertir DataFrame a CSV para descarga
         def convertir_a_csv(df):
             cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
             df_export = df[cols_export].copy()
             df_export.columns = ['Nº Registro', 'CDU / Signatura', 'Título', 'Año', 'Nº Préstamos', '¿Prestado?']
             return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
 
-        # 1. Función para convertir DataFrame a CSV
-        def convertir_a_csv(df):
-            cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
-            df_export = df[cols_export].copy()
-            df_export.columns = ['Nº Registro', 'CDU / Signatura', 'Título', 'Año', 'Nº Préstamos', '¿Prestado?']
-            return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
-
-        # 2. Función actualizada con un parámetro 'key' único
         def generar_seccion_resumen(df_sub, nombre_nivel, ruta_completa):
             vols = len(df_sub)
-            if vols == 0: return
+            if vols == 0: return # Protección extra
             
             pct_coll = (vols / total_docs * 100)
             edad_m = df_sub['year'].mean()
@@ -390,17 +381,14 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             })
             st.table(df_met)
             
-            # Botón de descarga con key única basada en la ruta completa
-            csv_data = convertir_a_csv(df_sub)
             st.download_button(
                 label=f"📥 Descargar lista: {nombre_nivel}",
-                data=csv_data,
-                file_name=f"export_{ruta_completa.replace(' ', '_')}.csv",
+                data=convertir_a_csv(df_sub),
+                file_name=f"export_{ruta_completa.replace(' ', '_')[:20]}.csv",
                 mime="text/csv",
-                key=f"dl_{ruta_completa}" # <--- ESTO SOLUCIONA EL ERROR
+                key=f"dl_{ruta_completa}"
             )
 
-        # 3. Función recursiva ajustada para pasar la ruta completa
         def render_niveles(df_actual, prefijo_actual, ruta_path):
             def obtener_siguientes_nodos(df, prefijo):
                 nodos_hijos = set()
@@ -419,14 +407,26 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 nuevo_prefijo = f"{prefijo_actual} {nodo}".strip()
                 nueva_ruta = f"{ruta_path}_{nodo}"
                 df_hijo = df_actual[df_actual['signatura_real'].str.startswith(nuevo_prefijo, na=False)]
-                hijos_del_hijo = obtener_siguientes_nodos(df_hijo, nuevo_prefijo)
                 
-                with st.expander(f"📁 {nodo} ({len(df_hijo)} volúmenes)"):
-                    generar_seccion_resumen(df_hijo, nodo, nueva_ruta)
-                    if hijos_del_hijo:
-                        render_niveles(df_hijo, nuevo_prefijo, nueva_ruta)
-                    else:
-                        st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                # FILTRO CRÍTICO: Solo renderizamos si hay libros
+                if len(df_hijo) > 0:
+                    hijos_del_hijo = obtener_siguientes_nodos(df_hijo, nuevo_prefijo)
+                    
+                    with st.expander(f"📁 {nodo} ({len(df_hijo)} volúmenes)"):
+                        generar_seccion_resumen(df_hijo, nodo, nueva_ruta)
+                        if hijos_del_hijo:
+                            render_niveles(df_hijo, nuevo_prefijo, nueva_ruta)
+                        else:
+                            st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+
+        # 4. Inicio del árbol (Filtrando categorías vacías)
+        for cat in sorted(df_completo['categoria'].unique()):
+            df_cat = df_completo[df_completo['categoria'] == cat]
+            # Solo mostramos si la categoría contiene al menos un libro
+            if len(df_cat) > 0:
+                with st.expander(f"📚 {cat} ({len(df_cat)} volúmenes)"):
+                    generar_seccion_resumen(df_cat, cat, cat)
+                    render_niveles(df_cat, "", cat)
 
         # 4. Inicio del árbol
         categorias = sorted(df_completo['categoria'].unique())
