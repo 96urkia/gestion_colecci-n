@@ -354,71 +354,95 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-    # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (ÁRBOL DINÁMICO) ---
+   # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (JERARQUÍA FILTRADA Y ESTRICTA) ---
     with tab3:
         st.subheader("🔎 Análisis exhaustivo por CDU")
-        st.markdown("Explora la jerarquía topográfica real de tu biblioteca. Haz clic en las categorías para desplegar los siguientes niveles y visualizar los documentos que contienen.")
-        
-        # Función para extraer dinámicamente los niveles basados en los caracteres
-        def extraer_niveles_dinamicos(row):
-            sig = str(row['signatura_real']).strip().upper()
-            if not sig or sig == 'NAN': 
-                return pd.Series(["Sin Identificar", None, None])
+        st.markdown("Explora la estructura de la colección. El árbol se despliega nivel a nivel.")
+
+        def convertir_a_csv(df):
+            cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
+            df_export = df[cols_export].copy()
+            df_export.columns = ['Nº Registro', 'CDU / Signatura', 'Título', 'Año', 'Nº Préstamos', '¿Prestado?']
+            return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
+
+        def generar_seccion_resumen(df_sub, nombre_nivel, ruta_completa):
+            vols = len(df_sub)
+            if vols == 0: return
             
-            # Si empieza por letras (Ej: 'N', 'DVD 791', 'EUS 821')
-            match_letras = re.match(r'^([A-Z]+)', sig)
-            if match_letras:
-                prefijo = match_letras.group(1) # Extrae todo hasta el primer espacio/número
-                resto = sig[len(prefijo):].strip()
-                resto_nums = re.sub(r'[^0-9]', '', resto)
-                
-                n1 = prefijo
-                n2 = f"{prefijo} {resto_nums[0]}" if len(resto_nums) >= 1 else None
-                n3 = f"{prefijo} {resto_nums[:2]}" if len(resto_nums) >= 2 else None
-                return pd.Series([n1, n2, n3])
-            else:
-                # Si empieza directamente por números (Ej: '821.134', '004')
-                nums = re.sub(r'[^0-9]', '', sig)
-                if not nums: return pd.Series(["Otros", None, None])
-                
-                n1 = nums[0]
-                n2 = nums[:2] if len(nums) >= 2 else None
-                n3 = nums[:3] if len(nums) >= 3 else None
-                return pd.Series([n1, n2, n3])
+            pct_coll = (vols / total_docs * 100)
+            edad_m = df_sub['year'].mean()
+            pct_prest = (df_sub['prestado'].sum() / vols * 100)
+            
+            df_met = pd.DataFrame({
+                "Nº Volúmenes": [f"{vols:,}"],
+                "% Colección": [f"{pct_coll:.1f}%"],
+                "Edad Media": [f"{int(edad_m)}" if not np.isnan(edad_m) else "N/A"],
+                "% Préstamos": [f"{pct_prest:.1f}%"]
+            })
+            st.table(df_met)
+            
+            # Hash único basado en el contenido del dataframe para evitar duplicidad de botones
+            unique_hash = hash(tuple(df_sub.index.tolist()))
+            st.download_button(
+                label=f"📥 Descargar lista: {nombre_nivel}",
+                data=convertir_a_csv(df_sub),
+                file_name=f"export_{str(nombre_nivel).replace(' ', '_')[:20]}.csv",
+                mime="text/csv",
+                key=f"dl_{ruta_completa}_{unique_hash}"
+            )
 
-        # Creamos columnas jerárquicas en un DataFrame temporal
-        df_arbol = df_completo.copy()
-        df_arbol[['Nivel_1', 'Nivel_2', 'Nivel_3']] = df_arbol.apply(extraer_niveles_dinamicos, axis=1)
-        
-        # Renderizado de expansores anidados (Panel interactivo)
-        conteo_n1 = df_arbol['Nivel_1'].value_counts()
-        
-        for n1, count1 in conteo_n1.items():
-            with st.expander(f"📁 {n1} ({count1} volúmenes)"):
-                df_n1 = df_arbol[df_arbol['Nivel_1'] == n1]
-                conteo_n2 = df_n1['Nivel_2'].dropna().value_counts()
-                
-                # Si no hay un nivel 2 (ej. solo pone 'N' y nada más), mostramos la tabla
-                if conteo_n2.empty:
-                    st.dataframe(df_n1[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
-                else:
-                    for n2, count2 in conteo_n2.items():
-                        # Evitar anidar si el nivel 2 es idéntico al 1 lógicamente
-                        if n1 == n2: continue 
+        def render_niveles(df_actual, prefijo_actual, ruta_path):
+            def obtener_siguientes_nodos(df, prefijo):
+                nodos_hijos = set()
+                # Extraemos el prefijo de la signatura para identificar el siguiente nivel
+                for sig in df['signatura_real'].unique():
+                    sig = str(sig)
+                    if sig.startswith(prefijo):
+                        # Limpiamos prefijo y delimitadores comunes
+                        resto = sig[len(prefijo):].lstrip('. ()')
                         
-                        with st.expander(f"📂 Nivel 2: {n2} ({count2} volúmenes)"):
-                            df_n2 = df_n1[df_n1['Nivel_2'] == n2]
-                            conteo_n3 = df_n2['Nivel_3'].dropna().value_counts()
-                            
-                            # Si no hay nivel 3 o es idéntico al 2
-                            if conteo_n3.empty or len(conteo_n3) == 1:
-                                st.dataframe(df_n2[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
-                            else:
-                                for n3, count3 in conteo_n3.items():
-                                    with st.expander(f"📄 Nivel 3: {n3} ({count3} volúmenes)"):
-                                        df_n3 = df_n2[df_n2['Nivel_3'] == n3]
-                                        st.dataframe(df_n3[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                        # Filtro de autor (ignora 3 letras)
+                        if re.match(r'^[A-Za-z]{3}$', resto): continue
+                        
+                        # Captura el primer bloque (número o paréntesis)
+                        match = re.match(r'^([0-9]+|\([0-9]+\))', resto)
+                        if match:
+                            bloque = match.group(1)
+                            if re.match(r'^[A-Za-z]{3}$', bloque): continue
+                            nodos_hijos.add(bloque)
+                return sorted(list(nodos_hijos))
 
+            nodos = obtener_siguientes_nodos(df_actual, prefijo_actual)
+            
+            for nodo in nodos:
+                # Patrón para asegurar que el nodo es un segmento independiente
+                # Buscamos el nodo como bloque aislado
+                patron = f"{re.escape(prefijo_actual.strip())}\\.?\\s?\\(?{re.escape(nodo.replace('(', '').replace(')', ''))}".strip()
+                df_hijo = df_actual[df_actual['signatura_real'].str.contains(patron, regex=True, na=False)]
+                
+                if len(df_hijo) > 0:
+                    nueva_ruta = f"{ruta_path}_{nodo.replace('(', '').replace(')', '')}"
+                    
+                    with st.expander(f"📁 {nodo} ({len(df_hijo)} volúmenes)"):
+                        generar_seccion_resumen(df_hijo, nodo, nueva_ruta)
+                        
+                        # Comprobamos si tiene subdivisiones más profundas
+                        hijos_del_hijo = obtener_siguientes_nodos(df_hijo, f"{prefijo_actual} {nodo}".strip())
+                        
+                        if hijos_del_hijo:
+                            render_niveles(df_hijo, f"{prefijo_actual} {nodo}".strip(), nueva_ruta)
+                        else:
+                            st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+
+        # Inicio del árbol de categorías
+        for cat in sorted(df_completo['categoria'].unique()):
+            df_cat = df_completo[df_completo['categoria'] == cat]
+            if len(df_cat) > 0:
+                with st.expander(f"📚 {cat} ({len(df_cat)} volúmenes)"):
+                    generar_seccion_resumen(df_cat, cat, cat)
+                    render_niveles(df_cat, "", cat)
+
+                
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
         st.subheader("📋 Inventario de Títulos Extraídos")
