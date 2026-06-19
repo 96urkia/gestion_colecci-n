@@ -354,7 +354,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-   with tab3:
+  # Pestaña 3
+    with tab3:
         st.subheader("🔎 Análisis exhaustivo por secciones")
         
         # 1. Función auxiliar para determinar la sección
