@@ -412,7 +412,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 return "Sin clasificar"
         
             if seccion == "Adultos":
-                # Lógica estándar de Adultos
                 if sig[0].isdigit():
                     match = re.match(r'^([0-9]+)', sig)
                     if match:
@@ -426,14 +425,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 return sig[:nivel]
                 
             else: 
-                # --- SECCIÓN INFANTIL / JUVENIL ---
-                
-                # CASO A: Filtro estricto por Edades / Ficción (I0, I1, I2, I3, JN, IJ, J sin espacio posterior)
                 match_edad = re.match(r'^(I[0-3]|JN|IJ|J)(?:\s|$)', sig)
                 if match_edad:
                     return match_edad.group(1)
                 
-                # CASO B: CDU de Conocimientos Infantil (Formatos con espacio: 'I 1', 'I 50', 'I 824')
                 match_conoc = re.match(r'^I\s+([0-9\(A-Z].*)', sig)
                 if match_conoc:
                     cdu_interna = match_conoc.group(1).strip()
@@ -449,7 +444,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     if match: return f"I {match.group(1)}"
                     return f"I {cdu_interna[:nivel]}"
                 
-                # Fallback de seguridad
                 sig_limpia = re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', sig).strip()
                 if sig_limpia and sig_limpia[0].isdigit():
                     match = re.match(r'^([0-9]+)', sig_limpia)
@@ -483,31 +477,37 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     df_n1['Nivel_2'] = df_n1['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 2))
                     nodos_l2 = sorted(df_n1['Nivel_2'].unique())
                     
+                    # CASO CORTE (Nodos planos como I0, JN, etc.)
                     if len(nodos_l2) == 1 and nodos_l2[0] == n1:
                         with st.expander(f"📚 {n1}"):
                             generar_seccion_resumen(df_n1, n1, f"{sec}_L1_{n1}")
                             mostrar_tabla_promedios(df_n1, total_docs)
                     
+                    # CASO JERÁRQUICO (Clasificaciones con desglose como las CDU de conocimientos)
                     else:
-                        st.markdown(f"### 🗄️ Nivel Principal: {n1} ({len(df_n1)} volúmenes)")
-                        
-                        for n2 in nodos_l2:
-                            df_n2 = df_n1[df_n1['Nivel_2'] == n2].copy()
-                            
-                            # --- NIVEL 3 ---
-                            df_n2['Nivel_3'] = df_n2['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 3))
-                            nodos_l3 = sorted(df_n2['Nivel_3'].unique())
-                            
-                            with st.expander(f"📁 Subnivel: {n2}"):
-                                generar_seccion_resumen(df_n2, n2, f"{sec}_L2_{n2}")
+                        # NUEVA MEJORA: Convertido en st.expander para que todo el bloque sea desplegable
+                        with st.expander(f"🗄️ Nivel Principal: {n1} ({len(df_n1)} volúmenes)"):
+                            for n2 in nodos_l2:
+                                df_n2 = df_n1[df_n1['Nivel_2'] == n2].copy()
                                 
-                                if len(nodos_l3) == 1 and nodos_l3[0] == n2:
-                                    mostrar_tabla_promedios(df_n2, total_docs)
-                                else:
-                                    for n3 in nodos_l3:
-                                        df_n3 = df_n2[df_n2['Nivel_3'] == n3]
-                                        st.markdown(f"**📖 Específico: {n3}**")
-                                        mostrar_tabla_promedios(df_n3, total_docs)
+                                # --- NIVEL 3 ---
+                                df_n2['Nivel_3'] = df_n2['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 3))
+                                nodos_l3 = sorted(df_n2['Nivel_3'].unique())
+                                
+                                # Subnivel de segundo nivel (Anidado dentro del anterior)
+                                with st.expander(f"📁 Subnivel: {n2}"):
+                                    generar_seccion_resumen(df_n2, n2, f"{sec}_L2_{n2}")
+                                    
+                                    if len(nodos_l3) == 1 and nodos_l3[0] == n2:
+                                        mostrar_tabla_promedios(df_n2, total_docs)
+                                    else:
+                                        # Desglose de tercer nivel interno
+                                        for n3 in nodos_l3:
+                                            df_n3 = df_n2[df_n2['Nivel_3'] == n3]
+                                            st.markdown(f"**📖 Específico: {n3}**")
+                                            mostrar_tabla_promedios(df_n3, total_docs)
+                        
+                        # El separador visual se queda fuera para delimitar las grandes categorías (ej. separar la clase 5 de la 6)
                         st.divider()
                 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
