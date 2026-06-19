@@ -355,10 +355,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
    # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (JERARQUÍA FILTRADA) ---
+        # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (Jerarquía hasta 3 niveles) ---
     with tab3:
         st.subheader("🔎 Análisis exhaustivo por CDU")
-        st.markdown("Explora solo las secciones con volúmenes registrados.")
-
+        st.markdown("**Estructura jerárquica:** Nivel 1 → Nivel 2 → Nivel 3 (solo si hay registros)")
+        
         def convertir_a_csv(df):
             cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
             df_export = df[cols_export].copy()
@@ -367,12 +368,13 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
         def generar_seccion_resumen(df_sub, nombre_nivel, ruta_completa):
             vols = len(df_sub)
-            if vols == 0: return # Protección extra
-            
+            if vols == 0: 
+                return
+           
             pct_coll = (vols / total_docs * 100)
             edad_m = df_sub['year'].mean()
             pct_prest = (df_sub['prestado'].sum() / vols * 100)
-            
+           
             df_met = pd.DataFrame({
                 "Nº Volúmenes": [f"{vols:,}"],
                 "% Colección": [f"{pct_coll:.1f}%"],
@@ -380,57 +382,72 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 "% Préstamos": [f"{pct_prest:.1f}%"]
             })
             st.table(df_met)
-            
+           
             st.download_button(
                 label=f"📥 Descargar lista: {nombre_nivel}",
                 data=convertir_a_csv(df_sub),
-                file_name=f"export_{ruta_completa.replace(' ', '_')[:20]}.csv",
+                file_name=f"export_{ruta_completa.replace(' ', '_')[:40]}.csv",
                 mime="text/csv",
                 key=f"dl_{ruta_completa}"
             )
 
-        # 3. Función recursiva estricta (filtrando autores y niveles vacíos)
-        def render_niveles(df_actual, prefijo_actual, ruta_path):
-            def obtener_siguientes_nodos(df, prefijo):
-                nodos_hijos = set()
-                for sig in df['signatura_real'].unique():
-                    sig = str(sig)
-                    if sig.startswith(prefijo):
-                        resto = sig[len(prefijo):].lstrip('. ()')
-                        
-                        # --- FILTRO DE AUTOR ---
-                        # Ignora bloques que sean exactamente 3 letras (ej: 'PER', 'CAS')
-                        if re.match(r'^[A-Za-z]{3}$', resto):
-                            continue
-                            
-                        match = re.match(r'^([^. \(\)]+)', resto)
-                        if match:
-                            # Ignora si el bloque capturado son 3 letras sueltas
-                            if re.match(r'^[A-Za-z]{3}$', match.group(1)):
-                                continue
-                            nodos_hijos.add(match.group(1))
-                return sorted(list(nodos_hijos))
+        # Función mejorada para obtener siguientes nodos
+        def obtener_siguientes_nodos(df, prefijo):
+            nodos = set()
+            for sig in df['signatura_real'].astype(str):
+                if not sig.startswith(prefijo):
+                    continue
+                resto = sig[len(prefijo):].lstrip(' .()')
+                if not resto:
+                    continue
+                match = re.match(r'^([A-Za-z0-9]+)', resto)
+                if match:
+                    siguiente = match.group(1)
+                    # Evitar autores (3 letras mayúsculas)
+                    if re.match(r'^[A-Z]{3}$', siguiente):
+                        continue
+                    nodos.add(siguiente)
+            return sorted(list(nodos))
 
+        # Función recursiva con límite de profundidad
+        def render_niveles(df_actual, prefijo_actual="", ruta_path="", nivel=1, max_nivel=3):
+            if nivel > max_nivel:
+                return
+            
             nodos = obtener_siguientes_nodos(df_actual, prefijo_actual)
             
             for nodo in nodos:
-                nuevo_prefijo = f"{prefijo_actual} {nodo}".strip()
-                nueva_ruta = f"{ruta_path}_{nodo}"
+                nuevo_prefijo = f"{prefijo_actual}{nodo}".strip()
                 df_hijo = df_actual[df_actual['signatura_real'].str.startswith(nuevo_prefijo, na=False)]
                 
-                # FILTRO CRÍTICO: Solo renderizamos si hay libros
-                if len(df_hijo) > 0:
-                    hijos_del_hijo = obtener_siguientes_nodos(df_hijo, nuevo_prefijo)
+                if len(df_hijo) == 0:
+                    continue
+                
+                with st.expander(f"📁 {nodo} ({len(df_hijo)} volúmenes)", expanded=False):
+                    generar_seccion_resumen(df_hijo, nodo, f"{ruta_path}_{nodo}")
                     
-                    with st.expander(f"📁 {nodo} ({len(df_hijo)} volúmenes)"):
-                        generar_seccion_resumen(df_hijo, nodo, nueva_ruta)
-                        
-                        if hijos_del_hijo:
-                            # Si tiene niveles más profundos, recursión
-                            render_niveles(df_hijo, nuevo_prefijo, nueva_ruta)
-                        else:
-                            # Si no hay más niveles, tabla de datos
-                            st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                    # Si es nivel 3 → mostramos tabla directamente
+                    if nivel == max_nivel:
+                        st.dataframe(
+                            df_hijo[['signatura_real', 'titulo', 'year']].sort_values('signatura_real'),
+                            use_container_width=True, 
+                            hide_index=True
+                        )
+                    else:
+                        # Continuar a siguiente nivel
+                        render_niveles(df_hijo, nuevo_prefijo, f"{ruta_path}_{nodo}", nivel+1, max_nivel)
+
+        # ==================== INICIO DEL ÁRBOL ====================
+        categorias = sorted(df_completo['categoria'].unique())
+        
+        for cat in categorias:
+            df_cat = df_completo[df_completo['categoria'] == cat].copy()
+            
+            with st.expander(f"📚 {cat} ({len(df_cat)} volúmenes)", expanded=False):
+                generar_seccion_resumen(df_cat, cat, cat)
+                
+                # Iniciamos desde nivel 1 (mostrará nivel 2 y 3)
+                render_niveles(df_cat, prefijo_actual="", ruta_path=cat, nivel=1, max_nivel=3)
 
 
         # 4. Inicio del árbol
