@@ -389,6 +389,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 key=f"dl_{ruta_completa}"
             )
 
+        # 3. Función recursiva estricta (filtrando autores y niveles vacíos)
         def render_niveles(df_actual, prefijo_actual, ruta_path):
             def obtener_siguientes_nodos(df, prefijo):
                 nodos_hijos = set()
@@ -396,8 +397,17 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     sig = str(sig)
                     if sig.startswith(prefijo):
                         resto = sig[len(prefijo):].lstrip('. ()')
+                        
+                        # --- FILTRO DE AUTOR ---
+                        # Ignora bloques que sean exactamente 3 letras (ej: 'PER', 'CAS')
+                        if re.match(r'^[A-Za-z]{3}$', resto):
+                            continue
+                            
                         match = re.match(r'^([^. \(\)]+)', resto)
                         if match:
+                            # Ignora si el bloque capturado son 3 letras sueltas
+                            if re.match(r'^[A-Za-z]{3}$', match.group(1)):
+                                continue
                             nodos_hijos.add(match.group(1))
                 return sorted(list(nodos_hijos))
 
@@ -414,9 +424,12 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     
                     with st.expander(f"📁 {nodo} ({len(df_hijo)} volúmenes)"):
                         generar_seccion_resumen(df_hijo, nodo, nueva_ruta)
+                        
                         if hijos_del_hijo:
+                            # Si tiene niveles más profundos, recursión
                             render_niveles(df_hijo, nuevo_prefijo, nueva_ruta)
                         else:
+                            # Si no hay más niveles, tabla de datos
                             st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
 
         # 4. Inicio del árbol (Filtrando categorías vacías)
