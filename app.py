@@ -354,17 +354,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-    # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA DINÁMICA CON PROMEDIOS EN COLUMNAS) ---
+    # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA DINÁMICA CON BUSCADOR EXHAUSTIVO) ---
     with tab3:
         st.subheader("🔎 Análisis por secciones (Jerarquía)")
         
-        # 1. BUSCADOR DINÁMICO POR PREFIJO DE CDU / SIGNATURA
-        cdu_busqueda = st.text_input(
-            "🔍 Filtrar árbol por prefijo CDU / Signatura (ej. 94, 94(460.14), 82):",
-            value=""
-        ).strip().upper()
-        
-        # 2. FUNCIONES INTERNAS DE LA PESTAÑA
+        # 1. FUNCIONES INTERNAS DE LA PESTAÑA (Definidas al inicio para reutilizarlas en la búsqueda)
         def convertir_a_csv(df):
             """Genera un CSV adaptado a los campos exactos solicitados por el usuario."""
             df_export = pd.DataFrame()
@@ -458,17 +452,31 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         return num[:min(nivel, len(num))]
                 return sig[:nivel]
         
-        # 3. APLICACIÓN DEL FILTRO DE BÚSQUEDA
+        # 2. BUSCADOR EXHAUSTIVO SOBRE EL TEXTO ORIGINAL DE LA SIGNATURA
+        cdu_busqueda = st.text_input(
+            "🔍 Buscador exhaustivo por prefijo CDU / Signatura (ej. 94(460.14), 82-3):",
+            value=""
+        ).strip().upper()
+        
         df_jerarquia = df_completo.copy()
+        
+        # Aplicamos el filtro sobre el texto completo antes de estructurar las ramas
         if cdu_busqueda:
             df_jerarquia = df_jerarquia[
                 df_jerarquia['signatura_real'].astype(str).str.strip().str.upper().str.startswith(cdu_busqueda)
             ]
+            
+            if not df_jerarquia.empty:
+                st.markdown(f"### 📊 Indicadores del fondo filtrado por: `{cdu_busqueda}`")
+                # Se genera la tabla con las mismas columnas que solicitabas para las secciones
+                mostrar_tabla_promedios(df_jerarquia, total_docs)
+                generar_seccion_resumen(df_jerarquia, f"Resultado {cdu_busqueda}", f"search_tab_{cdu_busqueda}")
+                st.markdown("#### 🌳 Ubicación en el esquema jerárquico:")
+            else:
+                st.warning(f"⚠️ No se encontraron volúmenes que comiencen exactamente con el prefijo '{cdu_busqueda}' en el archivo.")
         
-        # 4. RENDERIZADO JERÁRQUICO
-        if df_jerarquia.empty:
-            st.warning(f"⚠️ No se encontraron volúmenes en la colección que comiencen con el prefijo: '{cdu_busqueda}'")
-        else:
+        # 3. RENDERIZADO JERÁRQUICO (Trabaja sobre el df_jerarquia completo o ya filtrado textualmente)
+        if not df_jerarquia.empty:
             df_jerarquia['seccion'] = df_jerarquia['signatura_real'].apply(
                 lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos"
             )
@@ -479,7 +487,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     df_sec = df_jerarquia[df_jerarquia['seccion'] == sec].copy()
                     
                     if df_sec.empty:
-                        st.info(f"No hay registros en la sección {sec} que coincidan con la búsqueda.")
+                        st.info(f"No hay registros en la sección {sec} para el criterio actual.")
                         continue
         
                     # --- NIVEL 1 ---
@@ -487,6 +495,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     nodos_l1 = sorted(df_sec['Nivel_1'].unique())
                     
                     for n1 in nodos_l1:
+                        df_n1 = df_sec[df_sec['Neres_1'] == n1 if 'Nivel_1' in df_sec.columns else df_sec['Nivel_1'] == n1].copy()
                         df_n1 = df_sec[df_sec['Nivel_1'] == n1].copy()
                         
                         # --- NIVEL 2 ---
