@@ -468,14 +468,13 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             
             if not df_jerarquia.empty:
                 st.markdown(f"### 📊 Indicadores del fondo filtrado por: `{cdu_busqueda}`")
-                # Se genera la tabla con las mismas columnas que solicitabas para las secciones
                 mostrar_tabla_promedios(df_jerarquia, total_docs)
                 generar_seccion_resumen(df_jerarquia, f"Resultado {cdu_busqueda}", f"search_tab_{cdu_busqueda}")
                 st.markdown("#### 🌳 Ubicación en el esquema jerárquico:")
             else:
                 st.warning(f"⚠️ No se encontraron volúmenes que comiencen exactamente con el prefijo '{cdu_busqueda}' en el archivo.")
         
-        # 3. RENDERIZADO JERÁRQUICO (Trabaja sobre el df_jerarquia completo o ya filtrado textualmente)
+        # 3. RENDERIZADO JERÁRQUICO
         if not df_jerarquia.empty:
             df_jerarquia['seccion'] = df_jerarquia['signatura_real'].apply(
                 lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos"
@@ -495,7 +494,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     nodos_l1 = sorted(df_sec['Nivel_1'].unique())
                     
                     for n1 in nodos_l1:
-                        df_n1 = df_sec[df_sec['Neres_1'] == n1 if 'Nivel_1' in df_sec.columns else df_sec['Nivel_1'] == n1].copy()
+                        # AQUÍ ESTÁ LA CORRECCIÓN: Una única línea limpia asignando el DataFrame
                         df_n1 = df_sec[df_sec['Nivel_1'] == n1].copy()
                         
                         # --- NIVEL 2 ---
