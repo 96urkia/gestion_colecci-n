@@ -354,66 +354,80 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-   # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (ÁRBOL DINÁMICO INFINITO) ---
-    # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (JERARQUÍA DINÁMICA) ---
+   # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (JERARQUÍA DINÁMICA CON DESCARGA) ---
     with tab3:
         st.subheader("🔎 Análisis exhaustivo por CDU")
         
-        # 1. Función para generar la tabla de métricas
-        def generar_tabla_metricas(df_sub):
+        # 1. Función para convertir DataFrame a CSV para descarga
+        def convertir_a_csv(df):
+            # Seleccionamos las columnas solicitadas
+            cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
+            df_export = df[cols_export].copy()
+            df_export.columns = ['Nº Registro', 'CDU / Signatura', 'Título', 'Año', 'Nº Préstamos', '¿Prestado?']
+            # Convertir a CSV
+            return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
+
+        # 2. Función para generar la tabla de métricas (Incluye el botón de descarga)
+        def generar_seccion_resumen(df_sub, nombre_nivel):
             vols = len(df_sub)
-            if vols == 0: return pd.DataFrame()
+            if vols == 0: return
+            
+            # Métricas
             pct_coll = (vols / total_docs * 100)
             edad_m = df_sub['year'].mean()
             pct_prest = (df_sub['prestado'].sum() / vols * 100)
-            return pd.DataFrame({
+            
+            # Tabla superior
+            df_met = pd.DataFrame({
                 "Nº Volúmenes": [f"{vols:,}"],
                 "% Colección": [f"{pct_coll:.1f}%"],
                 "Edad Media": [f"{int(edad_m)}" if not np.isnan(edad_m) else "N/A"],
                 "% Préstamos": [f"{pct_prest:.1f}%"]
             })
+            st.table(df_met)
+            
+            # Botón de descarga
+            csv_data = convertir_a_csv(df_sub)
+            st.download_button(
+                label=f"📥 Descargar lista de {nombre_nivel}",
+                data=csv_data,
+                file_name=f"export_{nombre_nivel.replace(' ', '_')}.csv",
+                mime="text/csv"
+            )
 
-        # 2. Función recursiva para renderizar niveles infinitos
+        # 3. Función recursiva actualizada
         def render_niveles(df_actual, prefijo_actual=""):
-            # Obtenemos los siguientes segmentos posibles
-            # Dividimos la signatura basándonos en puntos, espacios o paréntesis
             def extraer_siguiente_nivel(sig, prefijo):
                 if not sig.startswith(prefijo): return None
                 resto = sig[len(prefijo):].lstrip('. ()')
-                # Extraemos el primer bloque significativo (un número o una cadena de letras)
                 match = re.match(r'^([^. \(\)]+)', resto)
                 return match.group(1) if match else None
 
-            # Identificar todos los posibles nodos hijos únicos desde este punto
             opciones = set()
             for sig in df_actual['signatura_real'].unique():
-                sig = str(sig)
-                hijo = extraer_siguiente_nivel(sig, prefijo_actual)
-                if hijo:
-                    opciones.add(hijo)
+                hijo = extraer_siguiente_nivel(str(sig), prefijo_actual)
+                if hijo: opciones.add(hijo)
 
-            # Renderizar cada opción como un expander
             for hijo in sorted(list(opciones)):
                 nuevo_prefijo = f"{prefijo_actual} {hijo}".strip()
                 df_hijo = df_actual[df_actual['signatura_real'].str.startswith(nuevo_prefijo, na=False)]
                 
                 with st.expander(f"📁 {hijo} ({len(df_hijo)} volúmenes)"):
-                    st.table(generar_tabla_metricas(df_hijo))
+                    generar_seccion_resumen(df_hijo, hijo)
                     
-                    # Llamada recursiva: si existen niveles más profundos, los renderiza
+                    # Llamada recursiva
                     render_niveles(df_hijo, nuevo_prefijo)
                     
-                    # Si ya no hay niveles más profundos, mostramos los libros
+                    # Si es nivel hoja, mostramos el preview de la tabla
                     if len(df_hijo) > 0 and not any(extraer_siguiente_nivel(s, nuevo_prefijo) for s in df_hijo['signatura_real']):
                         st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
 
-        # Inicio del árbol desde las categorías base
+        # Inicio del árbol
         for cat in sorted(df_completo['categoria'].unique()):
             df_cat = df_completo[df_completo['categoria'] == cat]
             with st.expander(f"📚 {cat} ({len(df_cat)} volúmenes)"):
-                st.table(generar_tabla_metricas(df_cat))
+                generar_seccion_resumen(df_cat, cat)
                 render_niveles(df_cat)
-
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
         st.subheader("📋 Inventario de Títulos Extraídos")
