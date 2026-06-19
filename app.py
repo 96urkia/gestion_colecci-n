@@ -354,69 +354,80 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-    # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (ÁRBOL DINÁMICO) ---
+   # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (ÁRBOL DINÁMICO) ---
     with tab3:
         st.subheader("🔎 Análisis exhaustivo por CDU")
-        st.markdown("Explora la jerarquía topográfica real de tu biblioteca. Haz clic en las categorías para desplegar los siguientes niveles y visualizar los documentos que contienen.")
-        
-        # Función para extraer dinámicamente los niveles basados en los caracteres
+        st.markdown("Explora la jerarquía topográfica real de tu biblioteca. Haz clic en las categorías para desplegar los siguientes niveles.")
+
+        # Función para generar la fila de estadísticas (Tabla que solicitaste)
+        def generar_tabla_metricas(df_sub):
+            vols = len(df_sub)
+            pct_coll = (vols / total_docs * 100)
+            edad_m = df_sub['year'].mean()
+            pct_prest = (df_sub['prestado'].sum() / vols * 100)
+            
+            # Formateamos para que sea visualmente atractiva
+            data = {
+                "Nº Volúmenes": [f"{vols:,}"],
+                "% de la Colección": [f"{pct_coll:.1f}%"],
+                "Edad Media": [f"{int(edad_m)}" if not np.isnan(edad_m) else "N/A"],
+                "% de Préstamos": [f"{pct_prest:.1f}%"]
+            }
+            return pd.DataFrame(data)
+
+        # Función de extracción original
         def extraer_niveles_dinamicos(row):
             sig = str(row['signatura_real']).strip().upper()
             if not sig or sig == 'NAN': 
                 return pd.Series(["Sin Identificar", None, None])
-            
-            # Si empieza por letras (Ej: 'N', 'DVD 791', 'EUS 821')
             match_letras = re.match(r'^([A-Z]+)', sig)
             if match_letras:
-                prefijo = match_letras.group(1) # Extrae todo hasta el primer espacio/número
+                prefijo = match_letras.group(1)
                 resto = sig[len(prefijo):].strip()
                 resto_nums = re.sub(r'[^0-9]', '', resto)
-                
                 n1 = prefijo
                 n2 = f"{prefijo} {resto_nums[0]}" if len(resto_nums) >= 1 else None
                 n3 = f"{prefijo} {resto_nums[:2]}" if len(resto_nums) >= 2 else None
                 return pd.Series([n1, n2, n3])
             else:
-                # Si empieza directamente por números (Ej: '821.134', '004')
                 nums = re.sub(r'[^0-9]', '', sig)
                 if not nums: return pd.Series(["Otros", None, None])
-                
                 n1 = nums[0]
                 n2 = nums[:2] if len(nums) >= 2 else None
                 n3 = nums[:3] if len(nums) >= 3 else None
                 return pd.Series([n1, n2, n3])
 
-        # Creamos columnas jerárquicas en un DataFrame temporal
         df_arbol = df_completo.copy()
         df_arbol[['Nivel_1', 'Nivel_2', 'Nivel_3']] = df_arbol.apply(extraer_niveles_dinamicos, axis=1)
         
-        # Renderizado de expansores anidados (Panel interactivo)
         conteo_n1 = df_arbol['Nivel_1'].value_counts()
         
         for n1, count1 in conteo_n1.items():
+            df_n1 = df_arbol[df_arbol['Nivel_1'] == n1]
             with st.expander(f"📁 {n1} ({count1} volúmenes)"):
-                df_n1 = df_arbol[df_arbol['Nivel_1'] == n1]
-                conteo_n2 = df_n1['Nivel_2'].dropna().value_counts()
+                # Insertamos la tabla solicitada
+                st.table(generar_tabla_metricas(df_n1))
                 
-                # Si no hay un nivel 2 (ej. solo pone 'N' y nada más), mostramos la tabla
+                conteo_n2 = df_n1['Nivel_2'].dropna().value_counts()
                 if conteo_n2.empty:
                     st.dataframe(df_n1[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
                 else:
                     for n2, count2 in conteo_n2.items():
-                        # Evitar anidar si el nivel 2 es idéntico al 1 lógicamente
                         if n1 == n2: continue 
-                        
+                        df_n2 = df_n1[df_n1['Nivel_2'] == n2]
                         with st.expander(f"📂 Nivel 2: {n2} ({count2} volúmenes)"):
-                            df_n2 = df_n1[df_n1['Nivel_2'] == n2]
-                            conteo_n3 = df_n2['Nivel_3'].dropna().value_counts()
+                            # Insertamos la tabla para nivel 2
+                            st.table(generar_tabla_metricas(df_n2))
                             
-                            # Si no hay nivel 3 o es idéntico al 2
+                            conteo_n3 = df_n2['Nivel_3'].dropna().value_counts()
                             if conteo_n3.empty or len(conteo_n3) == 1:
                                 st.dataframe(df_n2[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
                             else:
                                 for n3, count3 in conteo_n3.items():
+                                    df_n3 = df_n2[df_n2['Nivel_3'] == n3]
                                     with st.expander(f"📄 Nivel 3: {n3} ({count3} volúmenes)"):
-                                        df_n3 = df_n2[df_n2['Nivel_3'] == n3]
+                                        # Insertamos la tabla para nivel 3
+                                        st.table(generar_tabla_metricas(df_n3))
                                         st.dataframe(df_n3[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
