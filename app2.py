@@ -103,42 +103,23 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         s = sign.strip().upper()
         
         if tipo_analisis == "Clasificación Mixta Estándar (CDU + Letras)":
-            # 1. MATERIAL AUDIOVISUAL
-            if re.search(r'\bI\s+DVD\b', s): 
-                return "I DVD (DVD Infantil)"
-            if re.search(r'\bDVD\b', s): 
-                return "DVD Audiovisual"
-
-            # 2. CÓMICS / NOVELA GRÁFICA
-            if re.search(r'^IC\b', s): 
-                return "IC (Comic Infantil)"
-            if re.search(r'^C\b', s): 
-                return "C (Comic Adultos)"
-
-            # 3. ESPECIALIDADES INFANTILES (Poesía y Teatro)
-            if re.search(r'\bIP\b', s): 
-                return "IP (Infantil Poesía)"
-            if re.search(r'\bIT\b', s): 
-                return "IT (Infantil Teatro)"
-
-            # 4. CDU INFANTIL (Ej: "I 1", "I 3", "I 8" con espacio)
-            if re.search(r'^I\s+[12356789]', s): 
-                return "CDU Infantil"
-
-            # 5. INFANTIL / JUVENIL ESTÁNDAR POR EDADES (Ficción/Narrativa)
+            if re.search(r'\bI\s+DVD\b', s): return "I DVD (DVD Infantil)"
+            if re.search(r'\bDVD\b', s): return "DVD Audiovisual"
+            if re.search(r'^IC\b', s): return "IC (Comic Infantil)"
+            if re.search(r'^C\b', s): return "C (Comic Adultos)"
+            if re.search(r'\bIP\b', s): return "IP (Infantil Poesía)"
+            if re.search(r'\bIT\b', s): return "IT (Infantil Teatro)"
+            if re.search(r'^I\s+[12356789]', s): return "CDU Infantil"
+            
             match_inf = re.match(r'^(I[0-3])', s)
             if match_inf:
                 return f"{match_inf.group(1)} (Infantil)"
             
-            if re.search(r'\bJN\b', s): 
-                return "JN (Juvenil)"
-            
-            # 6. FICCIÓN ADULTOS (Narrativa, Poesía, Teatro)
+            if re.search(r'\bJN\b', s): return "JN (Juvenil)"
             if re.search(r'\bN\s', s): return "Ficción / Narrativa"
             if re.search(r'\bP\s', s): return "Poesía"
             if re.search(r'\bT\s', s): return "Teatro"
             
-            # 7. CDU ADULTOS (Dígito inicial)
             m = re.match(r'^(\d)', s)
             if m:
                 cats = {
@@ -149,7 +130,6 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
                     '9':'9 - Historia / Geografía'
                 }
                 return cats.get(m.group(1), f"CDU {m.group(1)}xx")
-            
             return "Otros"
             
         elif tipo_analisis == "Solo Dígitos Iniciales de la CDU":
@@ -236,14 +216,9 @@ with st.sidebar:
 # ==========================================
 
 if st.session_state['analizado'] and st.session_state['resultado'] is not None:
-    # 1. Recuperar primero los datos limpios del estado de la sesión
     df_completo, huerfanos = st.session_state['resultado']
     
-    # 2. NORMALIZACIÓN DE COLUMNAS: Mapeo directo y seguro
-    if 'Sig. supl.' in df_completo.columns:
-        df_completo = df_completo.rename(columns={'Sig. supl.': 'signatura_suplementaria'})
-    
-    # Bloque de KPIs comunes en la parte superior (Fila 1)
+    # Bloque de KPIs comunes en la parte superior
     total_docs = len(df_completo)
     pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
     edad_media = df_completo['year'].mean()
@@ -260,11 +235,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
     st.markdown("---")
 
-    # CREACIÓN DE LAS PESTAÑAS
+    # CREACIÓN DE LAS PESTAÑAS (Aquí cambiamos el nombre de la 3)
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 Distribución y Uso", 
-        "📚 Análisis por CDU / Categorías", 
-        "🏷️ Signatura Suplementaria", 
+        "📚 Análisis por Categorías", 
+        "🔎 Análisis exhaustivo por CDU", 
         "📋 Explorador de Colección"
     ])
 
@@ -272,58 +247,44 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     with tab1:
         st.subheader("⚖️ Diagnóstico de la Colección según Pautas Oficiales")
         
-        # 1. DETERMINACIÓN DE PAUTAS SEGÚN POBLACIÓN (Ministerio de Cultura / IFLA)
         if poblacion_atendida <= 5000:
-            pauta_hab = 2.5
-            pauta_min, pauta_max = 4000, 5500
+            pauta_hab, pauta_min, pauta_max = 2.5, 4000, 5500
         elif poblacion_atendida <= 10000:
-            pauta_hab = 2.5
-            pauta_min, pauta_max = 7000, 12500
+            pauta_hab, pauta_min, pauta_max = 2.5, 7000, 12500
         elif poblacion_atendida <= 20000:
-            pauta_hab = 2.0
-            pauta_min, pauta_max = 12500, 20000
+            pauta_hab, pauta_min, pauta_max = 2.0, 12500, 20000
         elif poblacion_atendida <= 50000:
-            pauta_hab = 2.0
-            pauta_min, pauta_max = 20000, 65000
+            pauta_hab, pauta_min, pauta_max = 2.0, 20000, 65000
         elif poblacion_atendida <= 100000:
-            pauta_hab = 1.5
-            pauta_min, pauta_max = 45000, 80000
+            pauta_hab, pauta_min, pauta_max = 1.5, 45000, 80000
         else:
-            pauta_hab = 1.5
-            pauta_min, pauta_max = 80000, 95000
+            pauta_hab, pauta_min, pauta_max = 1.5, 80000, 95000
 
-        # 2. GENERACIÓN DE ALERTAS DE VOLUMEN ABSOLUTO Y RATIO
         col_al1, col_al2 = st.columns(2)
-        
         with col_al1:
             if total_docs < 2500:
-                st.error(f"🚨 **Alerta de Mínimo Absoluto:** IFLA establece un suelo de 2.500 obras por punto de servicio. Tu colección actual cuenta con **{total_docs:,}** volúmenes.")
+                st.error(f"🚨 **Alerta de Mínimo Absoluto:** IFLA establece un suelo de 2.500 obras. Tu colección cuenta con **{total_docs:,}**.")
             elif total_docs < pauta_min:
-                st.warning(f"⚠️ **Déficit de Volumen:** Para tu rango de población se recomiendan entre {pauta_min:,} y {pauta_max:,} documentos. Tu fondo cuenta con **{total_docs:,}** volúmenes.")
+                st.warning(f"⚠️ **Déficit de Volumen:** Se recomiendan entre {pauta_min:,} y {pauta_max:,} documentos. Tienes **{total_docs:,}**.")
             elif total_docs > pauta_max:
-                st.info(f"ℹ️ **Colección Sobredimensionada:** El rango óptimo recomendado es de {pauta_min:,} a {pauta_max:,} doc. Cuentas con **{total_docs:,}** volúmenes (valora un expurgo estructural).")
+                st.info(f"ℹ️ **Colección Sobredimensionada:** Rango óptimo: {pauta_min:,} a {pauta_max:,}. Tienes **{total_docs:,}**.")
             else:
-                st.success(f"✅ **Volumen Óptimo:** Tu colección de **{total_docs:,}** volúmenes cumple el estándar del Ministerio ({pauta_min:,} - {pauta_max:,} doc.).")
+                st.success(f"✅ **Volumen Óptimo:** Tu colección de **{total_docs:,}** volúmenes cumple el estándar.")
 
         with col_al2:
             if docs_por_habitante < pauta_hab:
-                st.warning(f"⚠️ **Ratio por Habitante Bajo:** Dispones de **{docs_por_habitante:.2f}** doc./hab. La pauta del Ministerio para tu municipio exige un mínimo de **{pauta_hab}** doc./hab.")
+                st.warning(f"⚠️ **Ratio por Habitante Bajo:** **{docs_por_habitante:.2f}** doc./hab. El mínimo es **{pauta_hab}**.")
             elif total_docs > pauta_max:
-                st.info(f"ℹ️ **Ratio Anómalamente Elevado:** Tienes **{docs_por_habitante:.2f}** doc./hab. Supera drásticamente la recomendación base de **{pauta_hab}**, reflejando el sobredimensionamiento del fondo.")
+                st.info(f"ℹ️ **Ratio Anómalamente Elevado:** **{docs_por_habitante:.2f}** doc./hab. Supera la recomendación de **{pauta_hab}**.")
             else:
-                st.success(f"✅ **Ratio por Habitante Óptimo:** Tienes **{docs_por_habitante:.2f}** doc./hab., cumpliendo la recomendación mínima de **{pauta_hab}** doc./hab.")
+                st.success(f"✅ **Ratio por Habitante Óptimo:** **{docs_por_habitante:.2f}** doc./hab., cumpliendo el mínimo de **{pauta_hab}**.")
 
-        # 3. AUDITORÍA DE MACRO-DISTRIBUCIÓN DE LA COLECCIÓN
         st.write("#### 📊 Distribución Macroscópica del Fondo")
-        
         def clasificar_macro(cat):
             c = str(cat).lower()
-            if "dvd" in c or "audiovisual" in c:
-                return "Audiovisuales/Multimedia"
-            elif "infantil" in c or "juvenil" in c or "jn" in c or "ic" in c or "ip" in c or "it" in c:
-                return "Infantil/Juvenil"
-            else:
-                return "Adultos"
+            if "dvd" in c or "audiovisual" in c: return "Audiovisuales/Multimedia"
+            elif "infantil" in c or "juvenil" in c or "jn" in c or "ic" in c or "ip" in c or "it" in c: return "Infantil/Juvenil"
+            else: return "Adultos"
 
         df_completo['macro_seccion'] = df_completo['categoria'].apply(clasificar_macro)
         macro_counts = df_completo['macro_seccion'].value_counts()
@@ -340,41 +301,27 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         })
         st.dataframe(tabla_macro, use_container_width=True, hide_index=True)
 
-        if pct_infantil < 20.0:
-            st.caption("💡 *Nota:* Tu sección infantil está por debajo del 20% recomendado. Considera desviar parte de las adquisiciones a este fondo.")
-        elif pct_infantil > 25.0:
-            st.caption("💡 *Nota:* Tu sección infantil supera la recomendación base (sobrepasa el 25% total). Es un fondo potente en tu biblioteca.")
-
         st.markdown("---")
-        
-        # 5. GRÁFICOS ORIGINALES DE ROTACIÓN Y CRONOLOGÍA
         st.subheader("📈 Nivel de rotación física")
         status_map = {0: 'Nunca prestado', 1: 'Prestado', 2: 'Muy prestado'}
         status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
         status_counts.columns = ['Estado', 'Cantidad']
-        fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', hole=0.4,
-                         color_discrete_sequence=px.colors.qualitative.Safe)
+        fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', hole=0.4, color_discrete_sequence=px.colors.qualitative.Safe)
         st.plotly_chart(fig_pie, use_container_width=True)
         
         st.markdown("---")
-        
         st.subheader("⏳ Cronología de Ediciones")
         if not df_completo['year'].dropna().empty:
-            fig_hist = px.histogram(df_completo, x='year', nbins=25, 
-                                    labels={'year': 'Año de Publicación', 'count': 'Volúmenes'},
-                                    color_discrete_sequence=['#1E3A8A'])
+            fig_hist = px.histogram(df_completo, x='year', nbins=25, labels={'year': 'Año de Publicación', 'count': 'Volúmenes'}, color_discrete_sequence=['#1E3A8A'])
             st.plotly_chart(fig_hist, use_container_width=True)
 
-    # --- PESTAÑA 2: NUEVO ANÁLISIS DETALLADO POR CDU ---
+    # --- PESTAÑA 2: ANÁLISIS DE VOLUMEN DE FONDOS ---
     with tab2:
-        st.subheader("📊 Análisis de Volumen de Fondos por CDU / Categorías")
+        st.subheader("📊 Análisis de Volumen de Fondos por Categorías Generales")
         
         cat_counts = df_completo['categoria'].value_counts().reset_index()
         cat_counts.columns = ['Categoría', 'Volúmenes']
-        
-        fig_bar = px.bar(cat_counts, x='Volúmenes', y='Categoría', orientation='h',
-                         text='Volúmenes', color='Volúmenes',
-                         color_continuous_scale=px.colors.sequential.Blugrn)
+        fig_bar = px.bar(cat_counts, x='Volúmenes', y='Categoría', orientation='h', text='Volúmenes', color='Volúmenes', color_continuous_scale=px.colors.sequential.Blugrn)
         fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=500)
         st.plotly_chart(fig_bar, use_container_width=True)
         
@@ -395,94 +342,91 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         
         def es_infantil(categoria):
             c = str(categoria).lower()
-            if "infantil" in c or "juvenil" in c:
-                return True
-            if c in ['i0', 'i1', 'i2', 'i3', 'jn']:
-                return True
-            tipo_guardado = st.session_state.get('tipo_analisis', '')
-            if tipo_guardado == "Longitud Fija (Primeros caracteres)" and c.startswith(('i', 'j')):
-                return True
-            return False
+            return True if "infantil" in c or "juvenil" in c or c in ['i0', 'i1', 'i2', 'i3', 'jn'] else False
 
         es_inf = tabla_cdu['Categoría / CDU'].apply(es_infantil)
         tabla_infantil = tabla_cdu[es_inf].copy()
         tabla_adultos = tabla_cdu[~es_inf].copy()
         
         st.markdown("### 👥 Colección de Adultos")
-        if not tabla_adultos.empty:
-            st.dataframe(tabla_adultos.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
-        else:
-            st.info("No se han detectado secciones pertenecientes al fondo de adultos.")
-            
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.dataframe(tabla_adultos.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
         
         st.markdown("### 🧒 Colección Infantil / Juvenil")
-        if not tabla_infantil.empty:
-            st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
-        else:
-            st.info("No se han detectado secciones pertenecientes al fondo infantil/juvenil.")
+        st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-        st.markdown("---")
-
-        with st.expander("🔍 Inspeccionar los documentos classified en 'Otros'"):
-            df_otros = df_completo[df_completo['categoria'] == 'Otros']
-            if not df_otros.empty:
-                st.dataframe(
-                    df_otros[['signatura_real', 'titulo']].drop_duplicates().head(100), 
-                    use_container_width=True, hide_index=True
-                )
-            else:
-                st.success("¡Excelente! No hay ningún documento clasificado en la categoría 'Otros'.")
-
-    # --- PESTAÑA 3: ANÁLISIS DE LA SIGNATURA SUPLEMENTARIA (Alineada dentro del IF) ---
+    # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (ÁRBOL DINÁMICO) ---
     with tab3:
-        st.subheader("📊 Análisis de la Signatura Suplementaria")
+        st.subheader("🔎 Análisis exhaustivo por CDU")
+        st.markdown("Explora la jerarquía topográfica real de tu biblioteca. Haz clic en las categorías para desplegar los siguientes niveles y visualizar los documentos que contienen.")
         
-        if 'signatura_suplementaria' in df_completo.columns:
-            df_sup = df_completo[df_completo['signatura_suplementaria'].notna() & (df_completo['signatura_suplementaria'].astype(str).str.strip() != '')].copy()
+        # Función para extraer dinámicamente los niveles basados en los caracteres
+        def extraer_niveles_dinamicos(row):
+            sig = str(row['signatura_real']).strip().upper()
+            if not sig or sig == 'NAN': 
+                return pd.Series(["Sin Identificar", None, None])
             
-            if not df_sup.empty:
-                df_sup['Codigo_Sup'] = df_sup['signatura_suplementaria'].astype(str).str.extract(r'^([A-Za-z0-9]+)')
+            # Si empieza por letras (Ej: 'N', 'DVD 791', 'EUS 821')
+            match_letras = re.match(r'^([A-Z]+)', sig)
+            if match_letras:
+                prefijo = match_letras.group(1) # Extrae todo hasta el primer espacio/número
+                resto = sig[len(prefijo):].strip()
+                resto_nums = re.sub(r'[^0-9]', '', resto)
                 
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.metric("Registros con Signatura Suplementaria", len(df_sup))
-                    st.write("**Top 10 códigos/prefijos más frecuentes:**")
-                    
-                    frecuencias_sup = (
-                        df_sup['Codigo_Sup']
-                        .value_counts()
-                        .head(10)
-                        .reset_index()
-                        .rename(columns={'Codigo_Sup': 'Código/Prefijo', 'count': 'Frecuencia'})
-                    )
-                    st.dataframe(frecuencias_sup, use_container_width=True, hide_index=True)
-                    
-                with col2:
-                    st.write("**Distribución de los códigos principales:**")
-                    chart_data = df_sup['Codigo_Sup'].value_counts().head(10)
-                    st.bar_chart(chart_data)
-                    
-                with st.expander("Ver desglose completo de signaturas suplementarias"):
-                    st.dataframe(
-                        df_sup[['signatura_suplementaria', 'Codigo_Sup']].value_counts().reset_index(name='Total'),
-                        use_container_width=True, hide_index=True
-                    )
+                n1 = prefijo
+                n2 = f"{prefijo} {resto_nums[0]}" if len(resto_nums) >= 1 else None
+                n3 = f"{prefijo} {resto_nums[:2]}" if len(resto_nums) >= 2 else None
+                return pd.Series([n1, n2, n3])
             else:
-                st.info("La columna existe, pero no contiene datos o está vacía.")
-        else:
-            st.error("No se ha encontrado la columna 'signatura_suplementaria' en el conjunto de datos actual.")
+                # Si empieza directamente por números (Ej: '821.134', '004')
+                nums = re.sub(r'[^0-9]', '', sig)
+                if not nums: return pd.Series(["Otros", None, None])
+                
+                n1 = nums[0]
+                n2 = nums[:2] if len(nums) >= 2 else None
+                n3 = nums[:3] if len(nums) >= 3 else None
+                return pd.Series([n1, n2, n3])
+
+        # Creamos columnas jerárquicas en un DataFrame temporal
+        df_arbol = df_completo.copy()
+        df_arbol[['Nivel_1', 'Nivel_2', 'Nivel_3']] = df_arbol.apply(extraer_niveles_dinamicos, axis=1)
         
-    # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS (Independiente y paralela a la 3) ---
+        # Renderizado de expansores anidados (Panel interactivo)
+        conteo_n1 = df_arbol['Nivel_1'].value_counts()
+        
+        for n1, count1 in conteo_n1.items():
+            with st.expander(f"📁 {n1} ({count1} volúmenes)"):
+                df_n1 = df_arbol[df_arbol['Nivel_1'] == n1]
+                conteo_n2 = df_n1['Nivel_2'].dropna().value_counts()
+                
+                # Si no hay un nivel 2 (ej. solo pone 'N' y nada más), mostramos la tabla
+                if conteo_n2.empty:
+                    st.dataframe(df_n1[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                else:
+                    for n2, count2 in conteo_n2.items():
+                        # Evitar anidar si el nivel 2 es idéntico al 1 lógicamente
+                        if n1 == n2: continue 
+                        
+                        with st.expander(f"📂 Nivel 2: {n2} ({count2} volúmenes)"):
+                            df_n2 = df_n1[df_n1['Nivel_2'] == n2]
+                            conteo_n3 = df_n2['Nivel_3'].dropna().value_counts()
+                            
+                            # Si no hay nivel 3 o es idéntico al 2
+                            if conteo_n3.empty or len(conteo_n3) == 1:
+                                st.dataframe(df_n2[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+                            else:
+                                for n3, count3 in conteo_n3.items():
+                                    with st.expander(f"📄 Nivel 3: {n3} ({count3} volúmenes)"):
+                                        df_n3 = df_n2[df_n2['Nivel_3'] == n3]
+                                        st.dataframe(df_n3[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
+
+    # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
         st.subheader("📋 Inventario de Títulos Extraídos")
         st.markdown("Utiliza el buscador integrado de la tabla para localizar títulos o signaturas específicas:")
         
         df_vista = df_completo[['record_id', 'signatura_real', 'categoria', 'titulo', 'year']].copy()
         df_vista.columns = ['ID Registro', 'Signatura', 'Categoría / CDU', 'Título del Documento', 'Año']
-        
         st.dataframe(df_vista, use_container_width=True, hide_index=True)
 
 else:
-    st.info("👉 El panel central se activará mostrando las secciones y gráficos una vez cargues los archivos en el menú lateral.")
+    st.info("👉 El panel central se activará mostrando las secciones y gráficos una vez cargues los archivos en el menú lateral")
