@@ -403,61 +403,61 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 )
         
             def obtener_prefijo_dinamico(sig, seccion, nivel):
-                """
-                Extrae el prefijo de clasificación aislando las secciones fijas de edad (I0-I3, JN)
-                y permitiendo el desglose jerárquico en las CDU de conocimientos.
-                """
-                sig = str(sig).strip().upper()
-                if not sig or sig == "NAN": 
-                    return "Sin clasificar"
-        
-                if seccion == "Adultos":
-                    # Lógica estándar de Adultos
-                    if sig[0].isdigit():
-                        match = re.match(r'^([0-9]+)', sig)
-                        if match:
-                            num = match.group(1)
-                            return num[:min(nivel, len(num))]
-                    if sig.startswith('('):
-                        match = re.match(r'^(\([0-9]+\))', sig)
-                        if match: return match.group(1)
-                    match = re.match(r'^([A-Za-z]+)', sig)
+            """
+            Extrae el prefijo de clasificación aislando las secciones fijas de edad (I0-I3, JN)
+            y permitiendo el desglose jerárquico en las CDU de conocimientos.
+            """
+            sig = str(sig).strip().upper()
+            if not sig or sig == "NAN": 
+                return "Sin clasificar"
+    
+            if seccion == "Adultos":
+                # Lógica estándar de Adultos
+                if sig[0].isdigit():
+                    match = re.match(r'^([0-9]+)', sig)
+                    if match:
+                        num = match.group(1)
+                        return num[:min(nivel, len(num))]
+                if sig.startswith('('):
+                    match = re.match(r'^(\([0-9]+\))', sig)
                     if match: return match.group(1)
-                    return sig[:nivel]
-                    
-                else: 
-                    # --- SECCIÓN INFANTIL / JUVENIL ---
-                    
-                    # CASO A: Filtro estricto por Edades / Ficción (I0, I1, I2, I3, JN, IJ, J sin espacio posterior)
-                    # Si encuentra estos patrones al inicio, devuelve la sección limpia e ignora el apellido del autor.
-                    match_edad = re.match(r'^(I[0-3]|JN|IJ|J)(?:\s|$)', sig)
-                    if match_edad:
-                        return match_edad.group(1)
-                    
-                    # CASO B: CDU de Conocimientos Infantil (Formatos con espacio: 'I 1', 'I 50', 'I 824')
-                    match_conoc = re.match(r'^I\s+([0-9\(\A-Z].*)', sig)
-                    if match_conoc:
-                        cdu_interna = match_conoc.group(1).strip()
-                        if cdu_interna and cdu_interna[0].isdigit():
-                            match = re.match(r'^([0-9]+)', cdu_interna)
-                            if match:
-                                num = match.group(1)
-                                return f"I {num[:min(nivel, len(num))]}"
-                        if cdu_interna.startswith('('):
-                            match = re.match(r'^(\([0-9]+\))', cdu_interna)
-                            if match: return f"I {match.group(1)}"
-                        match = re.match(r'^([A-Za-z]+)', cdu_interna)
-                        if match: return f"I {match.group(1)}"
-                        return f"I {cdu_interna[:nivel]}"
-                    
-                    # Fallback de seguridad para formatos alternativos no estandarizados
-                    sig_limpia = re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', sig).strip()
-                    if sig_limpia and sig_limpia[0].isdigit():
-                        match = re.match(r'^([0-9]+)', sig_limpia)
+                match = re.match(r'^([A-Za-z]+)', sig)
+                if match: return match.group(1)
+                return sig[:nivel]
+                
+            else: 
+                # --- SECCIÓN INFANTIL / JUVENIL ---
+                
+                # CASO A: Filtro estricto por Edades / Ficción (I0, I1, I2, I3, JN, IJ, J sin espacio posterior)
+                match_edad = re.match(r'^(I[0-3]|JN|IJ|J)(?:\s|$)', sig)
+                if match_edad:
+                    return match_edad.group(1)
+                
+                # CASO B: CDU de Conocimientos Infantil (Formatos con espacio: 'I 1', 'I 50', 'I 824')
+                # CORRECCIÓN: Se ha cambiado \A-Z por A-Z
+                match_conoc = re.match(r'^I\s+([0-9\(A-Z].*)', sig)
+                if match_conoc:
+                    cdu_interna = match_conoc.group(1).strip()
+                    if cdu_interna and cdu_interna[0].isdigit():
+                        match = re.match(r'^([0-9]+)', cdu_interna)
                         if match:
                             num = match.group(1)
-                            return num[:min(nivel, len(num))]
-                    return sig[:nivel]
+                            return f"I {num[:min(nivel, len(num))]}"
+                    if cdu_interna.startswith('('):
+                        match = re.match(r'^(\([0-9]+\))', cdu_interna)
+                        if match: return f"I {match.group(1)}"
+                    match = re.match(r'^([A-Za-z]+)', cdu_interna)
+                    if match: return f"I {match.group(1)}"
+                    return f"I {cdu_interna[:nivel]}"
+                
+                # Fallback de seguridad
+                sig_limpia = re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', sig).strip()
+                if sig_limpia and sig_limpia[0].isdigit():
+                    match = re.match(r'^([0-9]+)', sig_limpia)
+                    if match:
+                        num = match.group(1)
+                        return num[:min(nivel, len(num))]
+                return sig[:nivel]
         
             # 2. RENDERIZADO JERÁRQUICO
             df_completo['seccion'] = df_completo['signatura_real'].apply(
