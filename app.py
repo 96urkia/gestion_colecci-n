@@ -467,23 +467,6 @@ with tab3:
                                     st.markdown(f"**📖 Específico: {n3}** ({len(df_n3)} vol.)")
                                     st.dataframe(df_n3[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
                     st.divider() # Línea de separación para el siguiente Nivel 1
-
-        # 2. RENDERIZADO POR SECCIONES
-        df_completo['seccion'] = df_completo['signatura_real'].apply(lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos")
-        
-        tabs = st.tabs(["👥 Adultos", "🧸 Infantil / Juvenil"])
-        for i, sec in enumerate(["Adultos", "Infantil / Juvenil"]):
-            with tabs[i]:
-                df_sec = df_completo[df_completo['seccion'] == sec]
-                # Raíces: los primeros bloques CDU
-                raices = sorted(list(set([re.match(r'^([0-9]+|\([0-9]+\))', obtener_cdu_limpia(s)).group(1) 
-                                         for s in df_sec['signatura_real'].unique() if re.match(r'^([0-9]+|\([0-9]+\))', obtener_cdu_limpia(s))])))
-                
-                for r in raices:
-                    df_r = df_sec[df_sec['signatura_real'].apply(obtener_cdu_limpia).str.startswith(r)]
-                    with st.expander(f"📚 {r} ({len(df_r)} volúmenes)"):
-                        generar_seccion_resumen(df_r, r, f"{sec}_{r}")
-                        render_niveles(df_r, r, f"{sec}_{r}")
                 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
