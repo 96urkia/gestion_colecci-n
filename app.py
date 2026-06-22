@@ -664,52 +664,49 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
 
     with tab5:
-        st.subheader("🎯 Recomendaciones por CDU (Profundidad 3)")
-        st.caption("Libros más presentes en Navarra que te faltan, agrupados por CDU")
+        st.subheader("🎯 Recomendaciones por CDU")
+        st.caption("Libros más presentes en Navarra que no tienes, ordenados por puntuación")
         
-        col_r1, col_r2 = st.columns([3,1])
+        col_r1, col_r2 = st.columns([3, 1])
         with col_r1:
             limite_cdu = st.slider("Número de recomendaciones por CDU", 5, 20, 10)
-        
         with col_r2:
-            if st.button("🔄 Actualizar Recomendaciones CDU", type="primary"):
+            if st.button("🔄 Actualizar Recomendaciones", type="primary"):
                 st.rerun()
         
-        with st.spinner("Buscando recomendaciones por CDU..."):
-            # Convertimos a string para evitar problemas de cache
-            if 'bibliotecas_seleccionadas' in locals() and bibliotecas_seleccionadas:
-                bib_str = "||".join(sorted(bibliotecas_seleccionadas))
-            else:
-                bib_str = biblioteca_seleccionada if 'biblioteca_seleccionada' in locals() else "Monteagudo"
+        with st.spinner("Buscando recomendaciones..."):
+            # Lógica para obtener el string de bibliotecas
+            bib_str = "||".join(sorted(bibliotecas_seleccionadas)) if 'bibliotecas_seleccionadas' in locals() else biblioteca_seleccionada
             
-            df_recom = obtener_recomendaciones_por_cdu(
-                conn, 
-                bib_str, # ← String seguro para cache
-                limite_por_cdu=limite_cdu
-            )
+            df_recom = obtener_recomendaciones_por_cdu(conn, bib_str, limite_por_cdu=limite_cdu)
         
-        if df_recom.empty:
-            st.warning("No se encontraron recomendaciones por CDU.")
+        # Validación de seguridad: verificamos si está vacío o si falta la columna clave
+        if df_recom is None or df_recom.empty:
+            st.warning("No se encontraron recomendaciones. Prueba a cambiar los criterios.")
+        elif 'cdu_base' not in df_recom.columns:
+            st.error("Error técnico: La columna 'cdu_base' no existe en los resultados.")
+            st.write("Columnas disponibles:", df_recom.columns.tolist())
         else:
-            st.success(f"✅ Recomendaciones en **{df_recom['cdu3'].nunique()}** categorías CDU")
+            # Ahora usamos cdu_base (o la columna que tu función devuelva)
+            st.success(f"✅ Recomendaciones en **{df_recom['cdu_base'].nunique()}** categorías")
             
-            for cdu3, group in df_recom.groupby('cdu3'):
-                with st.expander(f"📘 **{cdu3}** — {len(group)} recomendaciones", expanded=False):
-                    display_cols = ['titulo', 'autor', 'anio', 'cdu', 'total_bibliotecas']
-                    group_display = group[display_cols].rename(columns={
-                        'titulo': 'Título', 
-                        'autor': 'Autor', 
-                        'anio': 'Año', 
-                        'cdu': 'CDU', 
-                        'total_bibliotecas': 'Bibliotecas en Navarra'
+            for cdu_val, group in df_recom.groupby('cdu_base'):
+                with st.expander(f"📘 **Categoría {cdu_val}** — {len(group)} libros", expanded=False):
+                    
+                    # Seleccionamos las columnas que existen en tu DataFrame
+                    columnas_a_mostrar = ['titulo', 'autor', 'anio', 'cdu', 'bibliotecas']
+                    # Filtramos por seguridad
+                    disp = group[[c for c in columnas_a_mostrar if c in group.columns]].rename(columns={
+                        'titulo': 'Título', 'autor': 'Autor', 'anio': 'Año', 
+                        'cdu': 'CDU', 'bibliotecas': 'Bibliotecas en Navarra'
                     })
                     
-                    st.dataframe(group_display, use_container_width=True, hide_index=True)
+                    st.dataframe(disp, use_container_width=True, hide_index=True)
                     
-                    csv = group_display.to_csv(index=False, sep=';')
+                    # Descarga
                     st.download_button(
-                        label=f"⬇️ Descargar {cdu3}",
-                        data=csv,
-                        file_name=f"recom_{cdu3}.csv",
+                        label=f"⬇️ Descargar {cdu_val}",
+                        data=disp.to_csv(index=False, sep=';').encode('utf-8'),
+                        file_name=f"recom_{cdu_val}.csv",
                         mime="text/csv"
                     )
