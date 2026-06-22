@@ -63,6 +63,42 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     if df_topo.empty:
         return None, 0
 
+
+    # Ruta donde se guardará el archivo dentro del servidor de Streamlit
+DB_PATH = "gestion_coleccion.db"
+
+# URL de tu almacenamiento externo (debe ser un enlace de descarga directa)
+# Ejemplo: https://www.dropbox.com/s/raw/.../tu_archivo.db
+DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=0" 
+
+@st.cache_resource
+def obtener_conexion_db():
+    # Si el archivo no está en el servidor (primera ejecución), lo descarga
+    if not os.path.exists(DB_PATH):
+        with st.spinner("Descargando base de datos de la colección (500MB)... Esto solo ocurre una vez."):
+            try:
+                # Si usas una URL real, descomenta la línea de abajo:
+                # urllib.request.urlretrieve(DB_URL, DB_PATH)
+                
+                # NOTA DE DESARROLLO LOCAL: Si estás en local, simplemente 
+                # coloca tu archivo .db en la misma carpeta del script con el nombre 'gestion_coleccion.db'
+                pass
+            except Exception as e:
+                st.error(f"Error al descargar la base de datos: {e}")
+                return None
+                
+    # Conexión segura para entornos web (check_same_thread=False es crucial para Streamlit)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    return conn
+
+# Inicializar la conexión
+conn = obtener_conexion_db()
+
+if conn:
+    st.success("Conexión activa a la base de datos de la colección.")
+else:
+    st.error("No se pudo establecer la conexión con la base de datos.")
+
     # 2. Catálogo y extracción de años
     cat_text = catalogo_bytes.decode('utf-8', errors='replace')
     cat_text = re.sub(r'\b\d{2}/\d{2}/\d{4}\b', '', cat_text)
@@ -528,13 +564,58 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             st.divider()
                 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
-    with tab4:
-        st.subheader("📋 Inventario de Títulos Extraídos")
-        st.markdown("Utiliza el buscador integrado de la tabla para localizar títulos o signaturas específicas:")
-        
-        df_vista = df_completo[['record_id', 'signatura_real', 'categoria', 'titulo', 'year']].copy()
-        df_vista.columns = ['ID Registro', 'Signatura', 'Categoría / CDU', 'Título del Documento', 'Año']
-        st.dataframe(df_vista, use_container_width=True, hide_index=True)
-
-else:
-    st.info("👉 El panel central se activará mostrando las secciones y gráficos una vez cargues los archivos en el menú lateral")
+    # --- LÓGICA EXCLUSIVA DE TAB 4 ---
+with tab4:
+    st.header("⚙️ Procesamiento Avanzado de la Base de Datos")
+    
+    if conn:
+        try:
+            # 1. Obtener de forma dinámica las tablas disponibles en el archivo .db
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tablas = [fila[0] for fila in cursor.fetchall()]
+            
+            if tablas:
+                tabla_seleccionada = st.selectbox("Selecciona la tabla a analizar:", options=tablas)
+                
+                # 2. Obtener las columnas de la tabla seleccionada sin cargar datos
+                cursor.execute(f"PRAGMA table_info({tabla_seleccionada});")
+                columnas = [fila[1] for fila in cursor.fetchall()]
+                
+                columna_objetivo = st.selectbox("Selecciona la columna para el análisis técnico:", options=columnas)
+                
+                # Opción de limpieza física mediante SQL
+                ignorar_nulos = st.checkbox("Excluir registros vacíos (NULL) en el conteo")
+                
+                st.divider()
+                
+                if st.button("Ejecutar Análisis en Base de Datos", type="primary"):
+                    with st.spinner("Calculando métricas mediante consultas SQL optimizadas..."):
+                        
+                        # Construcción de consultas eficientes (evitamos traer filas enteras)
+                        where_clause = f"WHERE {columna_objetivo} IS NOT NULL" if ignorar_nulos else ""
+                        
+                        query_total = f"SELECT COUNT(*) FROM {tabla_seleccionada} {where_clause};"
+                        query_unicos = f"SELECT COUNT(DISTINCT {columna_objetivo}) FROM {tabla_seleccionada} {where_clause};"
+                        
+                        total_registros = pd.read_sql_query(query_total, conn).iloc[0, 0]
+                        valores_unicos = pd.read_sql_query(query_unicos, conn).iloc[0, 0]
+                        
+                        # Mostrar métricas en la interfaz
+                        col1, col2 = st.columns(2)
+                        col1.metric("Total Registros", f"{total_registros:,}")
+                        col2.metric("Valores Únicos", f"{valores_unicos:,}")
+                        
+                        # 3. Traer únicamente una muestra pequeña (ej. 10 filas) para la vista previa
+                        st.markdown("##### Vista previa de los primeros 10 registros:")
+                        query_muestra = f"SELECT {columna_objetivo} FROM {tabla_seleccionada} {where_clause} LIMIT 10;"
+                        df_muestra = pd.read_sql_query(query_muestra, conn)
+                        st.dataframe(df_muestra, use_container_width=True)
+                        
+            else:
+                st.warning("El archivo de base de datos no contiene tablas válidas.")
+                
+        except Exception as e:
+            st.error(f"Error al consultar la estructura de la base de datos: {e}")
+    else:
+        st.warning("⚠️ Requiere conexión con la base de datos de la colección.")
