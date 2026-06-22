@@ -69,11 +69,11 @@ def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca_usuario, lim
             ORDER BY total_bibliotecas DESC
             LIMIT ?
         """
-        # IMPORTANTE: Los parámetros deben ser una tupla (nombre, limite)
-        # o una lista. El error saltaba porque 'params' espera una colección.
-        parametros = (nombre_biblioteca_usuario, limite)
         
-        df_recomendados = pd.read_sql_query(query, conexion, params=parametros)
+        # FORZAMOS la creación de una tupla para evitar el error de tipo 'list'
+        params = (str(nombre_biblioteca_usuario), int(limite))
+        
+        df_recomendados = pd.read_sql_query(query, conexion, params=params)
         
         return df_recomendados
         
