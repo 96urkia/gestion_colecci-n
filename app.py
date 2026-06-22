@@ -1,8 +1,28 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import re
+import plotly.express as px
 import os
 import sqlite3
 
 # ==========================================
-# CONFIGURACIÓN DE BASE DE DATOS (Extraída fuera de la función)
+# CONFIGURACIÓN DE PÁGINA Y ESTADO
+# ==========================================
+st.set_page_config(
+    page_title="Analizador de Fondos de Biblioteca",
+    page_icon="📚",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+if 'analizado' not in st.session_state:
+    st.session_state['analizado'] = False
+if 'resultado' not in st.session_state:
+    st.session_state['resultado'] = None
+
+# ==========================================
+# CONFIGURACIÓN DE BASE DE DATOS
 # ==========================================
 DB_PATH = "gestion_coleccion.db"
 DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=0" 
