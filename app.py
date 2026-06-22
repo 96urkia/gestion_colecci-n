@@ -139,6 +139,23 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
 
     df_final['prestado'] = df_final['prestamos'] > 0
 
+    def obtener_recomendaciones_automaticas(conexion, mis_ids, limite=50):
+    if not conexion or not mis_ids:
+        return pd.DataFrame()
+    try:
+        query = """
+            SELECT record_id, titulo, COUNT(DISTINCT biblioteca) as total_bibliotecas
+            FROM ejemplares
+            GROUP BY record_id, titulo
+            ORDER BY total_bibliotecas DESC
+        """
+        df_global = pd.read_sql_query(query, conexion)
+        df_recomendados = df_global[~df_global['record_id'].isin(mis_ids)].copy()
+        return df_recomendados.head(limite)
+    except Exception as e:
+        st.error(f"Error al generar las recomendaciones: {e}")
+        return pd.DataFrame()
+
     # 5. Clasificación semántica de la CDU
     def clasificar_dinamico(sign):
         if not sign or not isinstance(sign, str): 
@@ -573,56 +590,30 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     # --- LÓGICA EXCLUSIVA DE TAB 4 ---
     with tab4:
-        st.header("⚙️ Procesamiento Avanzado de la Base de Datos")
+    st.header("📚 Recomendaciones de Adquisición Automáticas")
+    st.write("Libros más presentes en la Red de Bibliotecas de Navarra que faltan en tu colección:")
+    
+    if st.session_state['analizado'] and st.session_state['resultado'] is not None:
+        # Recuperamos el df de tu biblioteca generado en el análisis
+        df_tu_biblioteca = st.session_state['resultado'][0] 
+        mis_libros_ids = df_tu_biblioteca['record_id'].tolist()
         
-        if conn:
-            try:
-                # 1. Obtener de forma dinámica las tablas disponibles en el archivo .db
-                cursor = conn.cursor()
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-                tablas = [fila[0] for fila in cursor.fetchall()]
-                
-                if tablas:
-                    tabla_seleccionada = st.selectbox("Selecciona la tabla a analizar:", options=tablas)
-                    
-                    # 2. Obtener las columnas de la tabla seleccionada sin cargar datos
-                    cursor.execute(f"PRAGMA table_info({tabla_seleccionada});")
-                    columnas = [fila[1] for fila in cursor.fetchall()]
-                    
-                    columna_objetivo = st.selectbox("Selecciona la columna para el análisis técnico:", options=columnas)
-                    
-                    # Opción de limpieza física mediante SQL
-                    ignorar_nulos = st.checkbox("Excluir registros vacíos (NULL) en el conteo")
-                    
-                    st.divider()
-                    
-                    if st.button("Ejecutar Análisis en Base de Datos", type="primary"):
-                        with st.spinner("Calculando métricas mediante consultas SQL optimizadas..."):
-                            
-                            # Construcción de consultas eficientes (evitamos traer filas enteras)
-                            where_clause = f"WHERE {columna_objetivo} IS NOT NULL" if ignorar_nulos else ""
-                            
-                            query_total = f"SELECT COUNT(*) FROM {tabla_seleccionada} {where_clause};"
-                            query_unicos = f"SELECT COUNT(DISTINCT {columna_objetivo}) FROM {tabla_seleccionada} {where_clause};"
-                            
-                            total_registros = pd.read_sql_query(query_total, conn).iloc[0, 0]
-                            valores_unicos = pd.read_sql_query(query_unicos, conn).iloc[0, 0]
-                            
-                            # Mostrar métricas en la interfaz
-                            col1, col2 = st.columns(2)
-                            col1.metric("Total Registros", f"{total_registros:,}")
-                            col2.metric("Valores Únicos", f"{valores_unicos:,}")
-                            
-                            # 3. Traer únicamente una muestra pequeña (ej. 10 filas) para la vista previa
-                            st.markdown("##### Vista previa de los primeros 10 registros:")
-                            query_muestra = f"SELECT {columna_objetivo} FROM {tabla_seleccionada} {where_clause} LIMIT 10;"
-                            df_muestra = pd.read_sql_query(query_muestra, conn)
-                            st.dataframe(df_muestra, use_container_width=True)
-                            
-                else:
-                    st.warning("El archivo de base de datos no contiene tablas válidas.")
-                    
-            except Exception as e:
-                st.error(f"Error al consultar la estructura de la base de datos: {e}")
+        # Generar TOP automático sin botones ni inputs adicionales
+        with st.spinner("Calculando faltantes más populares..."):
+            df_top_compras = obtener_recomendaciones_automaticas(conn, mis_libros_ids, limite=20)
+            
+        if not df_top_compras.empty:
+            st.dataframe(
+                df_top_compras,
+                column_config={
+                    "record_id": "ID Registro",
+                    "titulo": "Título del Libro",
+                    "total_bibliotecas": "Nº Bibliotecas que lo tienen"
+                },
+                use_container_width=True,
+                hide_index=True
+            )
         else:
-            st.warning("⚠️ Requiere conexión con la base de datos de la colección.")
+            st.info("No se pudieron cargar recomendaciones o tu biblioteca ya tiene todo el catálogo.")
+    else:
+        st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
