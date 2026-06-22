@@ -59,23 +59,29 @@ def obtener_recomendaciones_automaticas(conexion, mis_ids, limite=50):
     if not conexion or not mis_ids:
         return pd.DataFrame()
     try:
-        # Hacemos un JOIN entre 'ejemplares' y 'libros' usando 'id_sistema'
-        # Lo renombramos a 'record_id' para que coincida con el dataframe principal
+        # Ahora incluimos el AUTOR y el AÑO en el SELECT y en el GROUP BY
         query = """
-            SELECT e.id_sistema as record_id, l.titulo, COUNT(DISTINCT e.biblioteca) as total_bibliotecas
+            SELECT 
+                e.id_sistema as record_id, 
+                l.titulo, 
+                l.autor, 
+                l.anio, 
+                COUNT(DISTINCT e.biblioteca) as total_bibliotecas
             FROM ejemplares e
             JOIN libros l ON e.id_sistema = l.id_sistema
-            GROUP BY e.id_sistema, l.titulo
+            GROUP BY e.id_sistema, l.titulo, l.autor, l.anio
             ORDER BY total_bibliotecas DESC
         """
         df_global = pd.read_sql_query(query, conexion)
         
-        # Como en SQLite 'id_sistema' es TEXT y en tus TXT es INTEGER, 
-        # convertimos la columna a número para que el filtrado funcione perfectamente
+        # Conversión de seguridad para asegurar que el cruce de IDs funcione
         df_global['record_id'] = pd.to_numeric(df_global['record_id'], errors='coerce')
         
-        # Filtramos los libros que ya tienes en tu biblioteca
+        # Filtramos los libros que ya tienes
         df_recomendados = df_global[~df_global['record_id'].isin(mis_ids)].copy()
+        
+        # Opcional: podrías ordenar también por año si quisieras priorizar novedades
+        # df_recomendados = df_recomendados.sort_values(by=['total_bibliotecas', 'anio'], ascending=[False, False])
         
         return df_recomendados.head(limite)
         
