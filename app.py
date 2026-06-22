@@ -101,7 +101,7 @@ BIBLIOTECAS = {
     "Allo", 988,
     "Altsasu / Alsasua", 7590,
     "Andosilla", 2882,
-    "Ansoáin / Antsoain, 10608,
+    "Ansoáin / Antsoain", 10608,
     "Añorbe", 628,
     "Aoiz, Agoitz", 2970,
     "Aranguren", 12517,
