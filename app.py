@@ -803,20 +803,20 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         cat_inf = clasificar_infantil(row.get("todas_signaturas", ""))
                         if cat_inf:
                             return "Infantil", cat_inf
-                        return None, None # Si no tiene un tejuelo infantil reconocible, se descarta como ruido
+                        return None, None # Si no tiene un tejuelo infantil reconocible, se descarta
                     
                     # FILTRO ADULTOS - FICCIÓN: Obras que empiezan por 821
                     if cdu.startswith("821"):
                         return "Adultos", "Ficción"
                     
-                    # FILTRO ADULTOS - MATERIAS CDU: Mapeo estricto de las clases solicitadas
+                    # FILTRO ADULTOS - MATERIAS CDU: Mapeo estricto incluyendo CDU 3 y excluyendo CDU 4
                     m = re.match(r'^(\d)', cdu)
                     if m:
                         digito = m.group(1)
-                        if digito in ['0', '1', '2', '5', '6', '7', '8', '9']:
+                        if digito in ['0', '1', '2', '3', '5', '6', '7', '8', '9']:
                             return "Adultos", f"CDU {digito}"
                     
-                    return None, None # Cualquier otra cosa (CDU 3, CDU 4, vacíos...) se ignora por completo
+                    return None, None # Cualquier otra cosa se ignora por completo
 
                 # Aplicamos las reglas al DataFrame
                 resultados = df.apply(clasificar_libro, axis=1)
@@ -837,12 +837,13 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 # 1) SUBPESTAÑA: ADULTOS
                 # ==========================================
                 with subtab_adultos:
-                    # Estructura fija y ordenada de los menús autorizados
+                    # Estructura fija y ordenada (Con CDU 3 y sin CDU 4)
                     menus_adultos = {
                         "Ficción": "📖 Ficción Adultos (821)",
                         "CDU 0": "📂 CDU 0 - Generalidades. Ciencia y Conocimiento",
                         "CDU 1": "📂 CDU 1 - Filosofía. Psicología",
                         "CDU 2": "📂 CDU 2 - Religión. Teología",
+                        "CDU 3": "📂 CDU 3 - Ciencias Sociales. Derecho. Economía",
                         "CDU 5": "📂 CDU 5 - Ciencias Puras. Naturales",
                         "CDU 6": "📂 CDU 6 - Ciencias Aplicadas. Medicina. Tecnología",
                         "CDU 7": "📂 CDU 7 - Bellas Artes. Espectáculos. Deportes",
@@ -852,7 +853,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     
                     hay_adultos = False
                     for key_cat, titulo_expander in menus_adultos.items():
-                        # Filtrar datos de la categoría concreta y aplicar el límite
                         df_grupo = df[(df["subtab_destino"] == "Adultos") & (df["categoria_final"] == key_cat)].head(limite_cdu)
                         
                         if not df_grupo.empty:
@@ -863,7 +863,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 
                                 st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
                                 
-                                # Botón de descarga de datos específico
                                 csv = df_mostrar.to_csv(index=False, sep=';', encoding="utf-8-sig")
                                 st.download_button(
                                     label=f"📥 Descargar CSV",
@@ -879,7 +878,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 # 2) SUBPESTAÑA: INFANTIL
                 # ==========================================
                 with subtab_infantil:
-                    # Estructura fija y ordenada de los menús autorizados (Edades + Materias)
+                    # Estructura fija asegurando la presencia visible de I CDU 8 e I CDU 9
                     menus_infantil = {
                         "I0": "👶 I0 - Prenatal / Bebeteca",
                         "I1": "🧸 I1 - Primeros Lectores (Hasta 6 años)",
@@ -900,7 +899,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     
                     hay_infantil = False
                     for key_cat, titulo_expander in menus_infantil.items():
-                        # Filtrar datos de la categoría infantil concreta y aplicar el límite
                         df_grupo = df[(df["subtab_destino"] == "Infantil") & (df["categoria_final"] == key_cat)].head(limite_cdu)
                         
                         if not df_grupo.empty:
@@ -911,7 +909,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 
                                 st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
                                 
-                                # Botón de descarga de datos específico
                                 csv = df_mostrar.to_csv(index=False, sep=';', encoding="utf-8-sig")
                                 st.download_button(
                                     label=f"📥 Descargar CSV",
@@ -922,5 +919,4 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 )
                     if not hay_infantil:
                         st.info("ℹ️ No se encontraron recomendaciones para la sección Infantil con los filtros actuales.")
-
 
