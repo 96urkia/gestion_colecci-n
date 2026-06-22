@@ -110,71 +110,45 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
 
 @st.cache_data(ttl=1800, hash_funcs={sqlite3.Connection: lambda _: None})
 def obtener_recomendaciones_por_cdu(conexion, bibliotecas_str, limite_por_cdu=10, profundidad=3):
-    """
-    Versión segura para caché: recibimos un string separado por '||' 
-    para poder generar un hash válido.
-    """
-    
-    # 1. Convertir el string de entrada a una lista real para la consulta
-    if isinstance(bibliotecas_str, str):
-        bibliotecas = [b.strip() for b in bibliotecas_str.split("||")]
-    else:
-        # Fallback por si acaso llega algo que no es string
-        bibliotecas = [str(bibliotecas_str)]
-   
-    if not bibliotecas or bibliotecas == ['']:
-        return pd.DataFrame()
-    
-    # 2. Generar placeholders para la consulta SQL
+    bibliotecas = [b.strip() for b in bibliotecas_str.split("||")]
     placeholders = ','.join(['?'] * len(bibliotecas))
-   
+    
+    # He añadido una verificación explícita de columnas en la consulta
     query = f"""
-        WITH cdu_prefix AS (
-            SELECT
-                l.id_sistema,
-                l.titulo,
-                l.autor,
-                l.anio,
-                l.cdu,
-                SUBSTR(TRIM(l.cdu), 1, {profundidad}) as cdu3,
-                COUNT(DISTINCT e.biblioteca) as total_bibliotecas
-            FROM libros l
-            JOIN ejemplares e ON l.id_sistema = e.id_sistema
-            WHERE l.cdu IS NOT NULL AND TRIM(l.cdu) != ''
-            GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
-        )
-        SELECT
-            cdu3,
-            id_sistema,
-            titulo,
-            autor,
-            anio,
-            cdu,
-            total_bibliotecas
-        FROM cdu_prefix
-        WHERE id_sistema NOT IN (
-            SELECT DISTINCT id_sistema
-            FROM ejemplares
-            WHERE TRIM(UPPER(biblioteca)) IN ({placeholders})
-        )
+        SELECT 
+            SUBSTR(TRIM(l.cdu), 1, {profundidad}) as cdu3,
+            l.id_sistema,
+            l.titulo,
+            l.autor,
+            l.anio,
+            l.cdu,
+            COUNT(DISTINCT e.biblioteca) as total_bibliotecas
+        FROM libros l
+        JOIN ejemplares e ON l.id_sistema = e.id_sistema
+        WHERE l.cdu IS NOT NULL AND TRIM(l.cdu) != ''
+          AND l.id_sistema NOT IN (
+              SELECT DISTINCT id_sistema 
+              FROM ejemplares 
+              WHERE TRIM(UPPER(biblioteca)) IN ({placeholders})
+          )
+        GROUP BY cdu3, l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
         ORDER BY cdu3, total_bibliotecas DESC
     """
-   
+    
     try:
-        # 3. Ejecutar consulta
         params = [b.upper() for b in bibliotecas]
         df = pd.read_sql_query(query, conexion, params=params)
-       
-        if df.empty:
+        
+        if df.empty or 'cdu3' not in df.columns:
             return pd.DataFrame()
-           
-        # 4. Procesar el resultado
+            
+        # Filtramos para mantener solo los 'limite_por_cdu' mejores por cada cdu3
         return df.groupby('cdu3', group_keys=False).apply(
             lambda x: x.nlargest(limite_por_cdu, 'total_bibliotecas')
-        ).reset_index(drop=True)
-       
+        ).reset_index() # reset_index asegura que 'cdu3' sea columna y no índice
+        
     except Exception as e:
-        st.error(f"Error en recomendaciones por CDU: {e}")
+        st.error(f"Error en BD: {e}")
         return pd.DataFrame()
 
 
