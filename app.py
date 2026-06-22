@@ -385,7 +385,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         "🔎 Análisis exhaustivo por CDU", 
         "📋 Explorador de Colección",
         "🎯 Recomendaciones por CDU" # ← Nueva pestaña
-    ])"
+    ])
 
     with tab1:
         st.subheader("⚖️ Diagnóstico de la Colección según Pautas Oficiales")
