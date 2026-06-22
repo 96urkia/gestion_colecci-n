@@ -108,8 +108,8 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=1800)
-def obtener_recomendaciones_por_cdu(conexion, bibliotecas_str: str, limite_por_cdu=10, profundidad=3):
+@st.cache_data(ttl=1800, hash_funcs={sqlite3.Connection: lambda _: None})
+def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, profundidad=3):
     """
     Versión segura para cache: recibimos un string en lugar de lista/tupla.
     """
