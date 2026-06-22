@@ -49,18 +49,10 @@ def obtener_conexion_db():
 # Inicializar la conexión
 conn = obtener_conexion_db()
 
-# ==========================================
-# FUNCIÓN DE RECOMENDACIONES AUTOMÁTICAS
-# ==========================================
-# ==========================================
-# FUNCIÓN DE RECOMENDACIONES AUTOMÁTICAS
-# ==========================================
 def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca_usuario, limite=50):
     if not conexion:
         return pd.DataFrame()
     try:
-        # Esta consulta busca libros que NO estén en la biblioteca 'Monteagudo'
-        # y los ordena por los que tienen más copias en el resto de la red.
         query = """
             SELECT 
                 l.id_sistema as record_id, 
@@ -75,11 +67,15 @@ def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca_usuario, lim
             )
             GROUP BY l.id_sistema, l.titulo, l.autor, l.anio
             ORDER BY total_bibliotecas DESC
+            LIMIT ?
         """
-        # Pasamos el nombre de tu biblioteca como parámetro de seguridad
-        df_recomendados = pd.read_sql_query(query, conexion, params=(nombre_biblioteca_usuario,))
+        # IMPORTANTE: Los parámetros deben ser una tupla (nombre, limite)
+        # o una lista. El error saltaba porque 'params' espera una colección.
+        parametros = (nombre_biblioteca_usuario, limite)
         
-        return df_recomendados.head(limite)
+        df_recomendados = pd.read_sql_query(query, conexion, params=parametros)
+        
+        return df_recomendados
         
     except Exception as e:
         st.error(f"Error al generar las recomendaciones: {e}")
