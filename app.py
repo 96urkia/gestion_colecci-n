@@ -504,7 +504,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 st.plotly_chart(fig_hist, use_container_width=True)
 
 
-                        # B) ANÁLISIS POR CDU
+        # B) ANÁLISIS POR CDU
         with subtab_cdu:
             st.subheader("🗂️ Concentración y Rendimiento por Secciones")
            
@@ -599,6 +599,17 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
             # Aseguramos la columna de control en el dataframe de trabajo
             df_completo['es_infantil'] = df_completo['categoria'].apply(identificar_infantil)
+
+            # --- 1. FILTRO DE PÚBLICO / SECCIÓN ---
+            filtro_pub = st.radio("1. Selecciona la Sección:", ["📚 Todo el fondo", "👨‍💼 Solo Adultos", "👶 Solo Infantil / Juvenil"], horizontal=True)
+            
+            df_nivel1 = df_completo.copy()
+            if "Adultos" in filtro_pub:
+                df_nivel1 = df_nivel1[~df_nivel1['es_infantil']]
+            elif "Infantil" in filtro_pub:
+                df_nivel1 = df_nivel1[df_nivel1['es_infantil']]
+
+            st.markdown("---")
 
             
 
