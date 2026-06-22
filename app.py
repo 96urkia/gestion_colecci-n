@@ -317,19 +317,19 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         # A) ANÁLISIS GENERAL
         with subtab_general:
             st.subheader("⚖️ Diagnóstico según Pautas Oficiales (IFLA)")
-            
+           
             # 1. Matriz completa de pautas oficiales según tramos de población
-            if poblacion_atendida <= 5000: 
+            if poblacion_atendida <= 5000:
                 pauta_hab, pauta_min, pauta_max = 2.5, 4000, 5500
-            elif poblacion_atendida <= 10000: 
+            elif poblacion_atendida <= 10000:
                 pauta_hab, pauta_min, pauta_max = 2.5, 7000, 12500
-            elif poblacion_atendida <= 20000: 
+            elif poblacion_atendida <= 20000:
                 pauta_hab, pauta_min, pauta_max = 2.0, 12500, 20000
-            elif poblacion_atendida <= 50000: 
+            elif poblacion_atendida <= 50000:
                 pauta_hab, pauta_min, pauta_max = 2.0, 20000, 65000
-            elif poblacion_atendida <= 100000: 
+            elif poblacion_atendida <= 100000:
                 pauta_hab, pauta_min, pauta_max = 1.5, 45000, 80000
-            else: 
+            else:
                 pauta_hab, pauta_min, pauta_max = 1.5, 80000, 95000
 
             col_al1, col_al2 = st.columns(2)
@@ -354,12 +354,25 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     st.success(f"✅ **Ratio Óptimo:** **{docs_por_habitante:.2f}** doc/hab.")
 
             st.write("#### 📊 Distribución Macroscópica")
+            
             def clasificar_macro(cat):
-                c = str(cat).lower()
-                if "dvd" in c or "audiovisual" in c: return "Audiovisuales"
-                elif any(x in c for x in ["infantil", "juvenil", "jn", "ic", "ip"]): return "Infantil/Juvenil"
+                # Limpiamos espacios y pasamos a mayúsculas para asegurar homogeneidad
+                c = str(cat).strip().upper()
+                
+                # 1. Filtro de Audiovisuales (Tiene prioridad: atrapa 'DVD', 'I DVD', 'CD', etc.)
+                if "DVD" in c or "AUDIOVISUAL" in c or "CD" in c: 
+                    return "Audiovisuales"
+                
+                # 2. Filtro de Infantil / Juvenil mediante Expresión Regular
+                # ^(I|JN|IC|IP|IT|INFANTIL|JUVENIL) -> Debe EMPEZAR por alguno de estos códigos
+                # (\s|\d+|-|$) -> Seguido de un espacio, un número, un guion o el final de la línea
+                if re.match(r'^(I|JN|IC|IP|IT|INFANTIL|JUVENIL)(\s|\d+|-|$)', c): 
+                    return "Infantil/Juvenil"
+                
+                # 3. Si no cumple lo anterior, se clasifica como Adultos
                 return "Adultos"
 
+            # Aplicamos la nueva clasificación corregida
             df_completo['macro_seccion'] = df_completo['categoria'].apply(clasificar_macro)
             macro_counts = df_completo['macro_seccion'].value_counts()
            
@@ -369,8 +382,9 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
             tabla_macro = pd.DataFrame({
                 "Sección": ["Adultos", "Infantil/Juvenil", "Audiovisuales"],
-                "Distribución": [f"{p_adultos:.1f}%", f"{p_infantil:.1f}%", f"{p_audio:.1f}%"]
-                
+                "Pauta IFLA": ["65.0%", "20.0%", "15.0%"],
+                "Tu Biblioteca": [f"{p_adultos:.1f}%", f"{p_infantil:.1f}%", f"{p_audio:.1f}%"],
+                "Desviación": [f"{p_adultos-65:.1f}%", f"{p_infantil-20:.1f}%", f"{p_audio-15:.1f}%"]
             })
             st.dataframe(tabla_macro, use_container_width=True, hide_index=True)
 
