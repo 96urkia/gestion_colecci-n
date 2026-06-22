@@ -71,10 +71,6 @@ def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca, limite=50):
         LIMIT ?
     """
     return pd.read_sql_query(query, conexion, params=(nombre_biblioteca, int(limite)))
-        
-    except Exception as e:
-        st.error(f"Error al generar las recomendaciones: {e}")
-        return pd.DataFrame()
 
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
