@@ -51,12 +51,27 @@ conn = obtener_conexion_db()
 
 # --- FUNCIÓN PARA RECOMENDACIONES --
 
-def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca, limite=50):
-    if not isinstance(nombre_biblioteca, str):
-        st.error(f"❌ Error: Se esperaba un nombre de biblioteca (texto), pero se recibió {type(nombre_biblioteca)}")
+def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
+    """
+    Recomienda libros populares en Navarra que NO tiene la(s) biblioteca(s) indicada(s).
+    - bibliotecas: puede ser un string ("Monteagudo") o una lista de strings.
+    """
+    
+    # Normalizar entrada a lista
+    if isinstance(bibliotecas, str):
+        bibliotecas = [bibliotecas]
+    elif not isinstance(bibliotecas, (list, tuple)):
+        st.error(f"❌ 'bibliotecas' debe ser texto o lista. Recibí: {type(bibliotecas)}")
         return pd.DataFrame()
     
-    query = """
+    if not bibliotecas:
+        st.error("❌ Debes indicar al menos una biblioteca.")
+        return pd.DataFrame()
+    
+    # Placeholder para múltiples valores
+    placeholders = ','.join(['?'] * len(bibliotecas))
+    
+    query = f"""
         SELECT
             l.id_sistema,
             l.titulo,
@@ -68,18 +83,29 @@ def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca, limite=50):
         WHERE l.id_sistema NOT IN (
             SELECT DISTINCT id_sistema 
             FROM ejemplares 
-            WHERE TRIM(UPPER(biblioteca)) = TRIM(UPPER(?))
+            WHERE TRIM(UPPER(biblioteca)) IN ({placeholders})
         )
         GROUP BY l.id_sistema, l.titulo, l.autor, l.anio
         ORDER BY total_bibliotecas DESC
         LIMIT ?
     """
+    
     try:
-        df = pd.read_sql_query(query, conexion, params=(nombre_biblioteca, int(limite)))
-        st.success(f"✅ {len(df)} recomendaciones cargadas para '{nombre_biblioteca}'")
+        # Parámetros: primero las bibliotecas, luego el límite
+        params = [b.upper().strip() for b in bibliotecas] + [int(limite)]
+        
+        df = pd.read_sql_query(query, conexion, params=params)
+        
+        if df.empty:
+            st.warning(f"⚠️ No se encontraron recomendaciones. La(s) biblioteca(s) podrían tener casi todo el catálogo.")
+        else:
+            bib_text = ", ".join(bibliotecas)
+            st.success(f"✅ {len(df)} recomendaciones cargadas (excluyendo {bib_text})")
+        
         return df
+        
     except Exception as e:
-        st.error(f"Error en la consulta de recomendaciones: {e}")
+        st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
 
