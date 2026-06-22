@@ -451,7 +451,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             else:
                 st.info("ℹ️ No hay datos suficientes para generar el análisis Infantil.")
 
-        # C) ANÁLISIS PROFUNDO POR SIGNATURA
+         # C) ANÁLISIS PROFUNDO POR SIGNATURA
         with subtab_signatura:
             st.subheader("🔎 Auditoría y Expurgo de Colección")
             st.write("Busca y filtra el fondo detallado para localizar libros obsoletos, desgastados o con rendimiento irregular.")
@@ -481,7 +481,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             col_busqueda, col_prestamos = st.columns([2, 1])
             
             with col_busqueda:
-                # El método .strip().upper() asegura homogeneidad con los datos del catálogo
                 busqueda_sig = st.text_input(
                     "⌨️ Buscador rápido por Signatura (ej: '004', '821-3', 'N ESP'):", 
                     value=""
@@ -491,7 +490,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 filtro_pr = st.selectbox("Historial Préstamos:", ["Todos", "Nunca prestado (0)", "Préstamo Estándar (1)", "Alta Demanda (2)"])
 
             # --- 3. FILTROS AVANZADOS DE APOYO (DESPLEGABLES) ---
-            # Se contraen en un expansor para no sobrecargar la pantalla si se usa el buscador directo
             with st.expander("🛠️ Filtros avanzados por árbol de categorías (CDU / Tejuelos)"):
                 col_exp1, col_exp2 = st.columns(2)
                 
@@ -499,7 +497,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     opciones_cat = ["Todas"] + sorted(df_nivel1['categoria'].dropna().unique().tolist())
                     filtro_cat = st.selectbox("Categoría Principal:", opciones_cat)
 
-                # Pasamos el filtro de categoría al dataframe intermedio de los desplegables
                 df_nivel2 = df_nivel1.copy()
                 if filtro_cat != "Todas":
                     df_nivel2 = df_nivel2[df_nivel2['categoria'] == filtro_cat]
@@ -518,13 +515,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             # --- 4. APLICACIÓN DE LA LÓGICA DE FILTRADO COMBINADA ---
             df_final_expurgo = df_nivel1.copy()
             
-            # A) Si el usuario escribe en el buscador, este tiene prioridad sobre los desplegables
             if busqueda_sig:
                 df_final_expurgo = df_final_expurgo[
                     df_final_expurgo['signatura_real'].str.upper().str.strip().str.startswith(busqueda_sig, na=False)
                 ]
             else:
-                # B) Si el buscador está vacío, operan los desplegables estructurados
                 if filtro_cat != "Todas":
                     df_final_expurgo = df_final_expurgo[df_final_expurgo['categoria'] == filtro_cat]
                 if filtro_sub != "Todas":
@@ -532,7 +527,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         df_final_expurgo['signatura_real'].str.upper().str.startswith(filtro_sub, na=False)
                     ]
             
-            # C) El filtro de uso por préstamos se aplica siempre de forma transversal
             if "Nunca" in filtro_pr:
                 df_final_expurgo = df_final_expurgo[df_final_expurgo['prestamos'] == 0]
             elif "Estándar" in filtro_pr:
@@ -540,13 +534,43 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             elif "Alta" in filtro_pr:
                 df_final_expurgo = df_final_expurgo[df_final_expurgo['prestamos'] == 2]
 
-            # --- 5. RENDERIZADO DE RESULTADOS ---
+            # --- 5. RENDERIZADO DE LA TABLA DETALLADA ---
             st.markdown(f"**Resultados encontrados: {len(df_final_expurgo)} documentos**")
             
             tabla_mostrar = df_final_expurgo[['record_id', 'signatura_real', 'titulo', 'year', 'categoria', 'prestamos']].copy()
             tabla_mostrar.columns = ['ID Sistema', 'Signatura', 'Título', 'Año', 'Categoría', 'Préstamos']
             
             st.dataframe(tabla_mostrar, use_container_width=True, hide_index=True)
+
+            # --- 6. NUEVA TABLA DINÁMICA DE RESUMEN EJECUTIVO ---
+            st.markdown("### 📊 Indicadores Globales de la Selección")
+            
+            if not df_final_expurgo.empty:
+                # A) Número de volúmenes totales en el filtro activo
+                num_volumenes = len(df_final_expurgo)
+                
+                # B) % de la colección que acumula préstamos (ej: cuántos tienen al menos 1 préstamo)
+                libros_prestados = (df_final_expurgo['prestamos'] > 0).sum()
+                pct_prestados = round((libros_prestados / num_volumenes) * 100, 1)
+                
+                # C) Año medio de edición del tramo seleccionado (omitiendo nulos)
+                anios_validos = df_final_expurgo['year'].dropna()
+                if not anios_validos.empty:
+                    anio_medio_col = int(anios_validos.mean())
+                else:
+                    anio_medio_col = "Sin datos de año"
+                
+                # Estructuramos los datos calculados en un pequeño DataFrame resumen
+                df_resumen_kpi = pd.DataFrame([{
+                    "Número de volúmenes": f"{num_volumenes} ej.",
+                    "% de préstamos (Uso Activo)": f"{pct_prestados} %",
+                    "Año medio de la colección": anio_medio_col
+                }])
+                
+                # Renderizado estilizado de la tabla de indicadores
+                st.dataframe(df_resumen_kpi, use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Modifica los criterios de búsqueda para calcular los indicadores del fondo.")
 
 
 
