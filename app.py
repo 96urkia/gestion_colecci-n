@@ -370,7 +370,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 fig_hist = px.histogram(df_completo, x='year', nbins=25, labels={'year': 'Año de Publicación'}, color_discrete_sequence=['#1E3A8A'])
                 st.plotly_chart(fig_hist, use_container_width=True)
 
-                # B) ANÁLISIS POR CDU
+                        # B) ANÁLISIS POR CDU
         with subtab_cdu:
             st.subheader("🗂️ Concentración y Rendimiento por Secciones")
            
@@ -384,11 +384,19 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             df_metrics['% Uso (Rotación)'] = (df_metrics['Prestados'] / df_metrics['Volúmenes'] * 100).round(1)
             df_metrics['Año Medio Edición'] = df_metrics['Año_Medio'].fillna(0).astype(int)
            
-            # 2. Segmentar de forma limpia entre Infantil/Juvenil y Adultos
-            # Identificamos como infantil cualquier categoría que contenga las palabras clave del tejuelo infantil
-            df_metrics['es_infantil'] = df_metrics['categoria'].apply(
-                lambda x: any(k in str(x).lower() for k in ["infantil", "juvenil", "jn", "ic", "ip", "it"])
-            )
+            # 2. Segmentar de forma limpia y estricta entre Infantil/Juvenil y Adultos
+            def es_categoria_infantil(categoria):
+                cat_str = str(categoria).upper()
+                # 1. Si contiene la palabra explícita (viene de nuestro analizador estándar)
+                if "INFANTIL" in cat_str or "JUVENIL" in cat_str:
+                    return True
+                # 2. Si se está usando el análisis por longitud fija y empieza por siglas infantiles exactas
+                # I, I1, I2, I3, JN, IC, IP, IT (evita que "Ficción" coincida con "IC")
+                if re.match(r'^(I[0-9]?|JN|IC|IP|IT)(\s|$)', cat_str):
+                    return True
+                return False
+
+            df_metrics['es_infantil'] = df_metrics['categoria'].apply(es_categoria_infantil)
             
             df_adultos = df_metrics[~df_metrics['es_infantil']].sort_values(by='Volúmenes', ascending=False)
             df_infantil = df_metrics[df_metrics['es_infantil']].sort_values(by='Volúmenes', ascending=False)
@@ -417,7 +425,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             else:
                 st.info("ℹ️ No hay datos suficientes para generar el análisis de Adultos.")
            
-            st.markdown("---") # Separador visual amplio
+            st.markdown("---")
             
             # ==========================================
             # 📊 GRÁFICO Y TABLA - SECCIÓN INFANTIL
@@ -430,7 +438,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     y='Volúmenes', 
                     color='% Uso (Rotación)', 
                     title="Infantil/Juvenil: Volumen vs Rotación por Categoría",
-                    color_continuous_scale="Purples", # Cambiamos de color para diferenciar secciones al golpe de vista
+                    color_continuous_scale="Purples",
                     labels={'categoria': 'Categoría / Tejuelo', 'Volúmenes': 'Nº Volúmenes'}
                 )
                 st.plotly_chart(fig_bar_infantil, use_container_width=True)
