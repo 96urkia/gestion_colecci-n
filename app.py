@@ -7,35 +7,38 @@ import numpy as np
 import re
 import plotly.express as px
 
+# ==========================================
+# INICIALIZACIÓN DE ESTADOS DE SESIÓN
+# ==========================================
+if 'analizado' not in st.session_state:
+    st.session_state['analizado'] = False
+if 'resultado' not in st.session_state:
+    st.session_state['resultado'] = None
 
 # ==========================================
 # CONFIGURACIÓN DE BASE DE DATOS (CORREGIDA)
 # ==========================================
 DB_PATH = "gestion_coleccion.db"
-# Cambiado el final de dl=0 a dl=1 para descarga directa y real
 DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=1" 
 
 @st.cache_resource
 def obtener_conexion_db():
-    # Comprobamos si no existe O si existe pero se creó vacío (0 bytes o corrupto HTML)
     debe_descargar = False
     if not os.path.exists(DB_PATH):
         debe_descargar = True
-    elif os.path.getsize(DB_PATH) < 10000:  # Si mide menos de 10KB es un archivo falso/vacío
-        os.remove(DB_PATH)  # Lo borramos para poder bajar el real
+    elif os.path.getsize(DB_PATH) < 10000:  
+        os.remove(DB_PATH)  
         debe_descargar = True
 
     if debe_descargar:
         with st.spinner("Descargando base de datos de la colección (500MB)... Esto puede tardar un minuto la primera vez."):
             try:
-                # Descarga real del archivo desde Dropbox
                 urllib.request.urlretrieve(DB_URL, DB_PATH)
                 st.toast("¡Base de datos descargada con éxito!", icon="📥")
             except Exception as e:
                 st.error(f"Error crítico al descargar la base de datos desde Dropbox: {e}")
                 return None
                 
-    # Conexión segura
     try:
         conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         return conn
@@ -46,21 +49,25 @@ def obtener_conexion_db():
 # Inicializar la conexión
 conn = obtener_conexion_db()
 
-if conn:
-    # Bloque opcional de depuración para ver qué tablas existen realmente dentro de tu DB
+# ==========================================
+# FUNCIÓN DE RECOMENDACIONES AUTOMÁTICAS
+# ==========================================
+def obtener_recomendaciones_automaticas(conexion, mis_ids, limite=50):
+    if not conexion or not mis_ids:
+        return pd.DataFrame()
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tablas = [fila[0] for fila in cursor.fetchall()]
-        if tablas:
-            st.success(f"Conexión activa. Tablas detectadas en la base de datos: {', '.join(tablas)}")
-        else:
-            st.warning("Conexión establecida, pero la base de datos sigue estando vacía (sin tablas).")
+        query = """
+            SELECT record_id, titulo, COUNT(DISTINCT biblioteca) as total_bibliotecas
+            FROM ejemplares
+            GROUP BY record_id, titulo
+            ORDER BY total_bibliotecas DESC
+        """
+        df_global = pd.read_sql_query(query, conexion)
+        df_recomendados = df_global[~df_global['record_id'].isin(mis_ids)].copy()
+        return df_recomendados.head(limite)
     except Exception as e:
-        st.error(f"Error al verificar las tablas: {e}")
-else:
-    st.error("No se pudo establecer la conexión con la base de datos.")
-
+        st.error(f"Error al generar las recomendaciones: {e}")
+        return pd.DataFrame()
 
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
@@ -74,7 +81,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     if not topo_bytes or not catalogo_bytes:
         return None, 0
     
-    # 1. Lectura y Extracción del Archivo Topográfico (con Títulos)
+    # 1. Lectura y Extracción del Archivo Topográfico
     topo_text = topo_bytes.decode('utf-8', errors='replace')
     data = []
     for line in topo_text.split('\n'):
@@ -82,17 +89,14 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         if not line or re.search(r'^(\d{2}/\d{2}/\d{4}|LISTADO|Signatura|-----)', line):
             continue
         
-        # Buscar Código de Barras / Record ID
         match = re.search(r'\b(\d{7,})\b', line)
         if not match:
             continue
         record_id = int(match.group(1))
         
-        # Extraer signatura real (antes del 84 XX)
         sign_match = re.search(r'(.+?)\s+84\s+[A-Z]{2}', line)
         signatura = sign_match.group(1).strip() if sign_match else line
         
-        # Extraer Título (después del número identificador)
         title_match = re.search(r'\d{7,}\s+(.{10,})', line)
         title = title_match.group(1).strip() if title_match else "Título no detectado"
         
@@ -138,23 +142,6 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         df_final.loc[df_final['record_id'].isin(mas2_ids), 'prestamos'] = 2
 
     df_final['prestado'] = df_final['prestamos'] > 0
-
-    def obtener_recomendaciones_automaticas(conexion, mis_ids, limite=50):
-    if not conexion or not mis_ids:
-        return pd.DataFrame()
-    try:
-        query = """
-            SELECT record_id, titulo, COUNT(DISTINCT biblioteca) as total_bibliotecas
-            FROM ejemplares
-            GROUP BY record_id, titulo
-            ORDER BY total_bibliotecas DESC
-        """
-        df_global = pd.read_sql_query(query, conexion)
-        df_recomendados = df_global[~df_global['record_id'].isin(mis_ids)].copy()
-        return df_recomendados.head(limite)
-    except Exception as e:
-        st.error(f"Error al generar las recomendaciones: {e}")
-        return pd.DataFrame()
 
     # 5. Clasificación semántica de la CDU
     def clasificar_dinamico(sign):
@@ -278,7 +265,6 @@ with st.sidebar:
 if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     df_completo, huerfanos = st.session_state['resultado']
     
-    # Bloque de KPIs comunes en la parte superior
     total_docs = len(df_completo)
     pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
     edad_media = df_completo['year'].mean()
@@ -295,7 +281,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
     st.markdown("---")
 
-    # CREACIÓN DE LAS PESTAÑAS (Aquí cambiamos el nombre de la 3)
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 Distribución y Uso", 
         "📚 Análisis por Categorías", 
@@ -303,7 +288,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         "📋 Explorador de Colección"
     ])
 
-    # --- PESTAÑA 1: DISTRIBUCIÓN Y USO GENERAL ---
     with tab1:
         st.subheader("⚖️ Diagnóstico de la Colección según Pautas Oficiales")
         
@@ -375,7 +359,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             fig_hist = px.histogram(df_completo, x='year', nbins=25, labels={'year': 'Año de Publicación', 'count': 'Volúmenes'}, color_discrete_sequence=['#1E3A8A'])
             st.plotly_chart(fig_hist, use_container_width=True)
 
-    # --- PESTAÑA 2: ANÁLISIS DE VOLUMEN DE FONDOS ---
     with tab2:
         st.subheader("📊 Análisis de Volumen de Fondos por Categorías Generales")
         
@@ -414,13 +397,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-    # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA DINÁMICA CON BUSCADOR EXHAUSTIVO) ---
     with tab3:
         st.subheader("🔎 Análisis por secciones (Jerarquía)")
         
-        # 1. FUNCIONES INTERNAS DE LA PESTAÑA (Definidas al inicio para reutilizarlas en la búsqueda)
         def convertir_a_csv(df):
-            """Genera un CSV adaptado a los campos exactos solicitados por el usuario."""
             df_export = pd.DataFrame()
             df_export['codigo de barras'] = df['record_id'] if 'record_id' in df.columns else np.nan
             df_export['cdu'] = df['signatura_real'] if 'signatura_real' in df.columns else ""
@@ -436,12 +416,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
         
         def mostrar_tabla_promedios(df_sub, total_coleccion):
-            """Calcula y muestra la tabla resumida con las métricas distribuidas en columnas."""
             avg_year = int(df_sub['year'].mean()) if not df_sub['year'].dropna().empty else "N/A"
             pct_uso = (df_sub['prestado'].sum() / len(df_sub) * 100) if len(df_sub) > 0 else 0
             pct_col = (len(df_sub) / total_coleccion * 100) if total_coleccion > 0 else 0
             
-            # Formatear la estructura en columnas (Fila única de datos)
             df_promedios = pd.DataFrame([{
                 "Volúmenes": len(df_sub),
                 "Año Promedio": avg_year,
@@ -463,10 +441,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             )
         
         def obtener_prefijo_dinamico(sig, seccion, nivel):
-            """
-            Extrae el prefijo de clasificación aislando las secciones fijas de edad (I0-I3, JN)
-            y permitiendo el desglose jerárquico en las CDU de conocimientos.
-            """
             sig = str(sig).strip().upper()
             if not sig or sig == "NAN": 
                 return "Sin clasificar"
@@ -512,7 +486,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         return num[:min(nivel, len(num))]
                 return sig[:nivel]
         
-        # 2. BUSCADOR EXHAUSTIVO SOBRE EL TEXTO ORIGINAL DE LA SIGNATURA
         cdu_busqueda = st.text_input(
             "🔍 Buscador exhaustivo por prefijo CDU / Signatura (ej. 94(460.14), 82-3):",
             value=""
@@ -520,7 +493,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         
         df_jerarquia = df_completo.copy()
         
-        # Aplicamos el filtro sobre el texto completo antes de estructurar las ramas
         if cdu_busqueda:
             df_jerarquia = df_jerarquia[
                 df_jerarquia['signatura_real'].astype(str).str.strip().str.upper().str.startswith(cdu_busqueda)
@@ -534,7 +506,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             else:
                 st.warning(f"⚠️ No se encontraron volúmenes que comiencen exactamente con el prefijo '{cdu_busqueda}' en el archivo.")
         
-        # 3. RENDERIZADO JERÁRQUICO
         if not df_jerarquia.empty:
             df_jerarquia['seccion'] = df_jerarquia['signatura_real'].apply(
                 lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos"
@@ -549,15 +520,12 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         st.info(f"No hay registros en la sección {sec} para el criterio actual.")
                         continue
         
-                    # --- NIVEL 1 ---
                     df_sec['Nivel_1'] = df_sec['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 1))
                     nodos_l1 = sorted(df_sec['Nivel_1'].unique())
                     
                     for n1 in nodos_l1:
-                        # AQUÍ ESTÁ LA CORRECCIÓN: Una única línea limpia asignando el DataFrame
                         df_n1 = df_sec[df_sec['Nivel_1'] == n1].copy()
                         
-                        # --- NIVEL 2 ---
                         df_n1['Nivel_2'] = df_n1['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 2))
                         nodos_l2 = sorted(df_n1['Nivel_2'].unique())
                         
@@ -571,7 +539,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 for n2 in nodos_l2:
                                     df_n2 = df_n1[df_n1['Nivel_2'] == n2].copy()
                                     
-                                    # --- NIVEL 3 ---
                                     df_n2['Nivel_3'] = df_n2['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 3))
                                     nodos_l3 = sorted(df_n2['Nivel_3'].unique())
                                     
@@ -585,35 +552,31 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                                 df_n3 = df_n2[df_n2['Nivel_3'] == n3]
                                                 st.markdown(f"**📖 Específico: {n3}**")
                                                 mostrar_tabla_promedios(df_n3, total_docs)
-                            st.divider()
-                
-    # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
-    # --- LÓGICA EXCLUSIVA DE TAB 4 ---
+                                st.divider()
+
     with tab4:
-    st.header("📚 Recomendaciones de Adquisición Automáticas")
-    st.write("Libros más presentes en la Red de Bibliotecas de Navarra que faltan en tu colección:")
-    
-    if st.session_state['analizado'] and st.session_state['resultado'] is not None:
-        # Recuperamos el df de tu biblioteca generado en el análisis
-        df_tu_biblioteca = st.session_state['resultado'][0] 
-        mis_libros_ids = df_tu_biblioteca['record_id'].tolist()
+        st.header("📚 Recomendaciones de Adquisición Automáticas")
+        st.write("Libros más presentes en la Red de Bibliotecas de Navarra que faltan en tu colección:")
         
-        # Generar TOP automático sin botones ni inputs adicionales
-        with st.spinner("Calculando faltantes más populares..."):
-            df_top_compras = obtener_recomendaciones_automaticas(conn, mis_libros_ids, limite=20)
+        if st.session_state['analizado'] and st.session_state['resultado'] is not None:
+            df_tu_biblioteca = st.session_state['resultado'][0] 
+            mis_libros_ids = df_tu_biblioteca['record_id'].tolist()
             
-        if not df_top_compras.empty:
-            st.dataframe(
-                df_top_compras,
-                column_config={
-                    "record_id": "ID Registro",
-                    "titulo": "Título del Libro",
-                    "total_bibliotecas": "Nº Bibliotecas que lo tienen"
-                },
-                use_container_width=True,
-                hide_index=True
-            )
+            with st.spinner("Calculando faltantes más populares..."):
+                df_top_compras = obtener_recomendaciones_automaticas(conn, mis_libros_ids, limite=20)
+                
+            if not df_top_compras.empty:
+                st.dataframe(
+                    df_top_compras,
+                    column_config={
+                        "record_id": "ID Registro",
+                        "titulo": "Título del Libro",
+                        "total_bibliotecas": "Nº Bibliotecas que lo tienen"
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("No se pudieron cargar recomendaciones o tu biblioteca ya tiene todo el catálogo.")
         else:
-            st.info("No se pudieron cargar recomendaciones o tu biblioteca ya tiene todo el catálogo.")
-    else:
-        st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
+            st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
