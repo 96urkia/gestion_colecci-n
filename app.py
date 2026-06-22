@@ -96,7 +96,19 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
 # ==========================================
 BIBLIOTECAS = {
-    "Monteagudo": 1100,
+    "Ablitas", 2610,
+    "Aibar / Oibar", 769,
+    "Allo", 988,
+    "Altsasu / Alsasua", 7590,
+    "Andosilla", 2882,
+    "Ansoáin / Antsoain, 10608,
+    "Añorbe", 628,
+    "Aoiz, Agoitz", 2970,
+    "Aranguren", 12517,
+    "Arbizu", 1126,
+    "Monteagudo", 1200,
+    
+    
 }
 
 @st.cache_data
