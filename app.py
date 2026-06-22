@@ -317,22 +317,39 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         # A) ANÁLISIS GENERAL
         with subtab_general:
             st.subheader("⚖️ Diagnóstico según Pautas Oficiales (IFLA)")
-            if poblacion_atendida <= 5000: pauta_hab, pauta_min, pauta_max = 2.5, 4000, 5500
-            elif poblacion_atendida <= 10000: pauta_hab, pauta_min, pauta_max = 2.5, 7000, 12500
-            else: pauta_hab, pauta_min, pauta_max = 2.0, 12500, 20000
+            
+            # 1. Matriz completa de pautas oficiales según tramos de población
+            if poblacion_atendida <= 5000: 
+                pauta_hab, pauta_min, pauta_max = 2.5, 4000, 5500
+            elif poblacion_atendida <= 10000: 
+                pauta_hab, pauta_min, pauta_max = 2.5, 7000, 12500
+            elif poblacion_atendida <= 20000: 
+                pauta_hab, pauta_min, pauta_max = 2.0, 12500, 20000
+            elif poblacion_atendida <= 50000: 
+                pauta_hab, pauta_min, pauta_max = 2.0, 20000, 65000
+            elif poblacion_atendida <= 100000: 
+                pauta_hab, pauta_min, pauta_max = 1.5, 45000, 80000
+            else: 
+                pauta_hab, pauta_min, pauta_max = 1.5, 80000, 95000
 
             col_al1, col_al2 = st.columns(2)
             with col_al1:
+                # Diagnóstico por volumen bruto total
                 if total_docs < 2500:
-                    st.error(f"🚨 **Alerta:** Suelo mínimo IFLA es de 2.500 obras. Tienes **{total_docs:,}**.")
+                    st.error(f"🚨 **Alerta:** Suelo mínimo absoluto IFLA es de 2.500 obras. Tienes **{total_docs:,}**.")
                 elif total_docs < pauta_min:
-                    st.warning(f"⚠️ **Déficit:** Recomendado {pauta_min:,}-{pauta_max:,}. Tienes **{total_docs:,}**.")
+                    st.warning(f"⚠️ **Déficit de fondo:** Recomendado para tu población: {pauta_min:,}-{pauta_max:,}. Tienes **{total_docs:,}** u.")
+                elif total_docs > pauta_max:
+                    st.info(f"ℹ️ **Fondo extenso:** El rango inicial recomendado es {pauta_min:,}-{pauta_max:,}. Tienes **{total_docs:,}** u.")
                 else:
-                    st.success(f"✅ **Óptimo:** Rango adecuado alcanzado con **{total_docs:,}** u.")
+                    st.success(f"✅ **Óptimo:** Volumen bruto adecuado dentro del rango ({pauta_min:,}-{pauta_max:,}).")
 
             with col_al2:
-                if docs_por_habitante < pauta_hab:
-                    st.warning(f"⚠️ **Ratio Bajo:** **{docs_por_habitante:.2f}** doc/hab. (Mínimo: {pauta_hab}).")
+                # Diagnóstico corregido por ratio de habitante (Evita falsos óptimos en poblaciones pequeñas)
+                if docs_por_habitante > 3.5:
+                    st.warning(f"⚠️ **Colección demasiado grande:** Tienes **{docs_por_habitante:.2f}** libros por persona (Límite óptimo: {pauta_hab} - Máx sugerido: 3.5).")
+                elif docs_por_habitante < pauta_hab:
+                    st.warning(f"⚠️ **Ratio Bajo:** **{docs_por_habitante:.2f}** doc/hab. (Mínimo recomendado: {pauta_hab}).")
                 else:
                     st.success(f"✅ **Ratio Óptimo:** **{docs_por_habitante:.2f}** doc/hab.")
 
@@ -345,14 +362,14 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
             df_completo['macro_seccion'] = df_completo['categoria'].apply(clasificar_macro)
             macro_counts = df_completo['macro_seccion'].value_counts()
-            
+           
             p_adultos = (macro_counts.get("Adultos", 0) / total_docs * 100) if total_docs > 0 else 0
             p_infantil = (macro_counts.get("Infantil/Juvenil", 0) / total_docs * 100) if total_docs > 0 else 0
             p_audio = (macro_counts.get("Audiovisuales", 0) / total_docs * 100) if total_docs > 0 else 0
 
             tabla_macro = pd.DataFrame({
                 "Sección": ["Adultos", "Infantil/Juvenil", "Audiovisuales"],
-                "Pauta": ["65.0%", "20.0%", "15.0%"],
+                "Pauta IFLA": ["65.0%", "20.0%", "15.0%"],
                 "Tu Biblioteca": [f"{p_adultos:.1f}%", f"{p_infantil:.1f}%", f"{p_audio:.1f}%"],
                 "Desviación": [f"{p_adultos-65:.1f}%", f"{p_infantil-20:.1f}%", f"{p_audio-15:.1f}%"]
             })
@@ -369,6 +386,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             if not df_completo['year'].dropna().empty:
                 fig_hist = px.histogram(df_completo, x='year', nbins=25, labels={'year': 'Año de Publicación'}, color_discrete_sequence=['#1E3A8A'])
                 st.plotly_chart(fig_hist, use_container_width=True)
+
 
                         # B) ANÁLISIS POR CDU
         with subtab_cdu:
