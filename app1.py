@@ -712,17 +712,17 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         else:
             st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
 
-       with tab5:
-        st.subheader("🎯 Recomendaciones de adquisición por CDU (estructuradas)")
+    with tab5:
+        st.subheader("🎯 Recomendaciones de adquisición estructuradas")
 
         if conn is None:
             st.error("No hay conexión con la base de datos")
         else:
-            # Filtros interactivos en paralelo en la parte superior de la pestaña
+            # Filtros interactivos globales en la parte superior de la pestaña
             col_filtros1, col_filtros2 = st.columns(2)
             with col_filtros1:
                 limite_cdu = st.number_input(
-                    "Máximo de recomendaciones por categoría:",
+                    "Máximo de recomendaciones por menú:",
                     min_value=1,
                     max_value=100,
                     value=10,
@@ -731,7 +731,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 )
             with col_filtros2:
                 anio_minimo = st.number_input(
-                    "Año mínimo de publicación del libro:",
+                    "Año mínimo de publicación:",
                     min_value=1800,
                     max_value=2026,
                     value=2015,
@@ -741,7 +741,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
             biblioteca = biblioteca_seleccionada.upper().strip()
 
-            # Consulta SQL modificada para extraer los tejuelos de los ejemplares de la Red
+            # Consulta SQL eficiente para extraer los libros y el histórico de sus tejuelos en la Red
             query = """
             SELECT
                 l.id_sistema,
@@ -763,128 +763,159 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             HAVING id_red_bibliotecas > 0
             """
 
-            with st.spinner("Consultando recomendaciones por CDU en la red..."):
+            with st.spinner("Filtrando y organizando el catálogo de la Red por secciones..."):
                 df = pd.read_sql_query(query, conn, params=[biblioteca, int(anio_minimo)])
 
             if df.empty:
                 st.warning("⚠️ No se encontraron recomendaciones con los filtros seleccionados.")
             else:
-                # Diccionario descriptivo estándar para el resto de las clases CDU
-                dicc_nombres_cdu = {
-                    '0': '0 - Generalidades. Ciencia y Conocimiento',
-                    '1': '1 - Filosofía. Psicología',
-                    '2': '2 - Religión. Teología',
-                    '3': '3 - Ciencias Sociales. Derecho. Economía',
-                    '4': '4 - Lengua / Lingüística',
-                    '5': '5 - Ciencias Puras. Naturales',
-                    '6': '6 - Ciencias Aplicadas. Medicina. Tecnología',
-                    '7': '7 - Bellas Artes. Espectáculos. Deportes',
-                    '8': '8 - Lingüística. Filología. Literatura',
-                    '9': '9 - Geografía. Biografías. Historia'
-                }
-
-                # Función que examina los tejuelos y respeta estrictamente los espacios
-                def buscar_tejuelo_infantil(todas_sigs):
+                # 1. Función interna para hilar fino con los tejuelos infantiles
+                def clasificar_infantil(todas_sigs):
                     if not todas_sigs:
-                        return "Infantil (General)"
+                        return None
                     
                     sigs = [s.strip().upper() for s in str(todas_sigs).split('||') if s.strip()]
                     
                     for sig in sigs:
-                        # Buscamos: Materias (I + espacio + dígito), Edades (I0 a I3 o JN), o Materias mal escritas (I4 a I9 sin espacio)
-                        match = re.search(r'\b(I\s+[0-9]|I[0-3]|JN|I[4-9])\b', sig)
-                        if match:
-                            val = match.group(1)
+                        # Edades estrictas (Sin espacio): I0, I1, I2, I3 o JN
+                        match_edad = re.search(r'\b(I0|I1|I2|I3|JN)\b', sig)
+                        if match_edad:
+                            return match_edad.group(1)
+                        
+                        # Materias estrictas (Con espacio): I 0, I 1, etc.
+                        match_mat = re.search(r'\bI\s+([0-9])\b', sig)
+                        if match_mat:
+                            return f"I CDU {match_mat.group(1)}"
+                        
+                        # Autocorrección de seguridad: si escribieron "I7" sin espacio, se fuerza a materia "I CDU 7"
+                        match_typo = re.search(r'\bI([4-9])\b', sig)
+                        if match_typo:
+                            return f"I CDU {match_typo.group(1)}"
                             
-                            # Lógica de limpieza y normalización:
-                            if re.match(r'^I\s+[0-9]$', val):
-                                # Si tiene espacio, garantizamos que sea solo 1 (por si pusieron "I 2")
-                                val = re.sub(r'\s+', ' ', val)
-                            elif re.match(r'^I[4-9]$', val):
-                                # Si es de I4 a I9 sin espacio, lo forzamos a materia añadiendo el espacio (Ej: "I7" -> "I 7")
-                                val = f"I {val[1]}"
-                                
-                            # Si termina siendo I0, I1, I2, I3 o JN, se queda pegado. Si es materia, mantiene su espacio.
-                            return f"Infantil ({val})"
-                    
-                    return "Infantil (General)"
+                    return None
 
-                # Función de clasificación distributiva
+                # 2. Función matriz de clasificación (Actúa como embudo/filtro de ruido)
                 def clasificar_libro(row):
                     cdu = str(row["cdu"]).strip().upper()
                     
-                    # 1: Ficción Adultos si empieza por 821
-                    if cdu.startswith("821"):
-                        return "Ficción Adultos (821)", "821"
-                    
-                    # 2: Infantil si empieza por 087.5
+                    # FILTRO INFANTIL: Obras que empiezan por 087.5
                     if cdu.startswith("087.5"):
-                        cat_infantil = buscar_tejuelo_infantil(row.get("todas_signaturas", ""))
-                        return cat_infantil, f"087.5_{cat_infantil}"
+                        cat_inf = clasificar_infantil(row.get("todas_signaturas", ""))
+                        if cat_inf:
+                            return "Infantil", cat_inf
+                        return None, None # Si no tiene un tejuelo infantil reconocible, se descarta
                     
-                    # Comportamiento general por defecto
-                    if not cdu or cdu == "NAN":
-                        return "Sin clasificar", "Z"
+                    # FILTRO ADULTOS - FICCIÓN: Obras que empiezan por 821
+                    if cdu.startswith("821"):
+                        return "Adultos", "Ficción"
                     
+                    # FILTRO ADULTOS - MATERIAS CDU: Mapeo estricto incluyendo CDU 3 y excluyendo CDU 4
                     m = re.match(r'^(\d)', cdu)
                     if m:
-                        return dicc_nombres_cdu.get(m.group(1), f"Clase {m.group(1)}"), m.group(1)
-                    m = re.match(r'^(\([0-9]+\))', cdu)
-                    if m:
-                        return f"Clasificación Especial {m.group(1)}", m.group(1)
-                    m = re.match(r'^([A-Z]+)', cdu)
-                    if m:
-                        return f"Clasificación Alfabética {m.group(1)}", m.group(1)
+                        digito = m.group(1)
+                        if digito in ['0', '1', '2', '3', '5', '6', '7', '8', '9']:
+                            return "Adultos", f"CDU {digito}"
                     
-                    return f"Otros ({cdu[:1]})", cdu[:1]
+                    return None, None # Cualquier otra cosa se ignora por completo
 
-                # Aplicar la lógica fila por fila
-                res_clasif = df.apply(clasificar_libro, axis=1)
-                df["categoria_nombre"] = [r[0] for r in res_clasif]
-                df["categoria_orden"] = [r[1] for r in res_clasif]
+                # Aplicamos las reglas al DataFrame
+                resultados = df.apply(clasificar_libro, axis=1)
+                df["subtab_destino"] = [r[0] for r in resultados]
+                df["categoria_final"] = [r[1] for r in resultados]
                 
+                # Eliminación activa del ruido: nos quedamos solo con lo clasificado de forma válida
+                df = df[df["subtab_destino"].notna()].copy()
+                
+                # Ordenación global por impacto en la Red (Nº de bibliotecas)
                 df["score"] = df["id_red_bibliotecas"]
-                df = df.sort_values(["categoria_orden", "score"], ascending=[True, False])
+                df = df.sort_values("score", ascending=False)
 
-                st.markdown("### 📚 Categorías y Clases Estructuradas")
-                
-                # Obtener listado de categorías únicas encontradas
-                categorias_unicas = df[["categoria_nombre", "categoria_orden"]].drop_duplicates().sort_values("categoria_orden")
+                # Creamos las dos subpestañas solicitadas
+                subtab_adultos, subtab_infantil = st.tabs(["👨‍💼 Sección Adultos", "👶 Sección Infantil"])
 
-                for _, row_cat in categorias_unicas.iterrows():
-                    cat_nombre = row_cat["categoria_nombre"]
-                    cat_orden = row_cat["categoria_orden"]
+                # ==========================================
+                # 1) SUBPESTAÑA: ADULTOS
+                # ==========================================
+                with subtab_adultos:
+                    # Estructura fija y ordenada (Con CDU 3 y sin CDU 4)
+                    menus_adultos = {
+                        "Ficción": "📖 Ficción Adultos (821)",
+                        "CDU 0": "📂 CDU 0 - Generalidades. Ciencia y Conocimiento",
+                        "CDU 1": "📂 CDU 1 - Filosofía. Psicología",
+                        "CDU 2": "📂 CDU 2 - Religión. Teología",
+                        "CDU 3": "📂 CDU 3 - Ciencias Sociales. Derecho. Economía",
+                        "CDU 5": "📂 CDU 5 - Ciencias Puras. Naturales",
+                        "CDU 6": "📂 CDU 6 - Ciencias Aplicadas. Medicina. Tecnología",
+                        "CDU 7": "📂 CDU 7 - Bellas Artes. Espectáculos. Deportes",
+                        "CDU 8": "📂 CDU 8 - Lingüística. Filología. Literatura (Exc. Ficción)",
+                        "CDU 9": "📂 CDU 9 - Geografía. Biografías. Historia"
+                    }
                     
-                    # Filtrar el dataframe y limitar
-                    df_grupo = df[df["categoria_nombre"] == cat_nombre].copy().head(limite_cdu)
-                    if df_grupo.empty:
-                        continue
+                    hay_adultos = False
+                    for key_cat, titulo_expander in menus_adultos.items():
+                        df_grupo = df[(df["subtab_destino"] == "Adultos") & (df["categoria_final"] == key_cat)].head(limite_cdu)
+                        
+                        if not df_grupo.empty:
+                            hay_adultos = True
+                            with st.expander(f"{titulo_expander} ({len(df_grupo)} títulos sugeridos)"):
+                                df_mostrar = df_grupo[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].copy()
+                                df_mostrar.columns = ["Título", "Autor", "Año", "CDU Completa", "Nº Bibliotecas Red"]
+                                
+                                st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+                                
+                                csv = df_mostrar.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                                st.download_button(
+                                    label=f"📥 Descargar CSV",
+                                    data=csv,
+                                    file_name=f"adultos_{key_cat.replace(' ', '_')}.csv",
+                                    mime="text/csv",
+                                    key=f"dl_adultos_{key_cat}"
+                                )
+                    if not hay_adultos:
+                        st.info("ℹ️ No se encontraron recomendaciones para la sección de Adultos con los filtros actuales.")
+
+                # ==========================================
+                # 2) SUBPESTAÑA: INFANTIL
+                # ==========================================
+                with subtab_infantil:
+                    # Estructura fija asegurando la presencia visible de I CDU 8 e I CDU 9
+                    menus_infantil = {
+                        "I0": "👶 I0 - Prenatal / Bebeteca",
+                        "I1": "🧸 I1 - Primeros Lectores (Hasta 6 años)",
+                        "I2": "🎒 I2 - Lectores Iniciados (7-9 años)",
+                        "I3": "🛡️ I3 - Lectores Experimentados (10-12 años)",
+                        "JN": "⚡ JN - Juvenil",
+                        "I CDU 0": "📚 I CDU 0 - Generalidades",
+                        "I CDU 1": "📚 I CDU 1 - Filosofía y Psicología",
+                        "I CDU 2": "📚 I CDU 2 - Religión",
+                        "I CDU 3": "📚 I CDU 3 - Ciencias Sociales",
+                        "I CDU 4": "📚 I CDU 4 - Lengua / Lingüística",
+                        "I CDU 5": "📚 I CDU 5 - Ciencias Puras. Naturales",
+                        "I CDU 6": "📚 I CDU 6 - Ciencias Aplicadas. Tecnología",
+                        "I CDU 7": "📚 I CDU 7 - Bellas Artes. Deportes",
+                        "I CDU 8": "📚 I CDU 8 - Literatura / Filología",
+                        "I CDU 9": "📚 I CDU 9 - Geografía e Historia"
+                    }
                     
-                    with st.expander(f"📂 {cat_nombre} ({len(df_grupo)} títulos sugeridos)"):
-                        st.markdown("#### 📊 Títulos recomendados en la red")
+                    hay_infantil = False
+                    for key_cat, titulo_expander in menus_infantil.items():
+                        df_grupo = df[(df["subtab_destino"] == "Infantil") & (df["categoria_final"] == key_cat)].head(limite_cdu)
                         
-                        df_mostrar = df_grupo[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].copy()
-                        df_mostrar.columns = ["Título", "Autor", "Año", "CDU Completa", "Nº Bibliotecas Red"]
-                        
-                        st.dataframe(
-                            df_mostrar,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                        st.markdown("#### 📈 Métricas de la Selección")
-                        col_m1, col_m2 = st.columns(2)
-                        with col_m1:
-                            st.metric("Media de presencia en Red", f"{round(df_grupo['id_red_bibliotecas'].mean(), 1)} bibs.")
-                        with col_m2:
-                            st.metric("Presencia Máxima", f"{int(df_grupo['id_red_bibliotecas'].max())} bibs.")
-
-                        # Descarga del CSV
-                        csv = df_grupo[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].to_csv(index=False, sep=';', encoding="utf-8-sig")
-                        st.download_button(
-                            label=f"📥 Descargar CSV de {cat_nombre}",
-                            data=csv,
-                            file_name=f"recomendaciones_{cat_orden.replace('.', '_').replace(' ', '_')}.csv",
-                            mime="text/csv",
-                            key=f"dl_tab5_{cat_orden}"
-                        )
+                        if not df_grupo.empty:
+                            hay_infantil = True
+                            with st.expander(f"{titulo_expander} ({len(df_grupo)} títulos sugeridos)"):
+                                df_mostrar = df_grupo[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].copy()
+                                df_mostrar.columns = ["Título", "Autor", "Año", "CDU Completa", "Nº Bibliotecas Red"]
+                                
+                                st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+                                
+                                csv = df_mostrar.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                                st.download_button(
+                                    label=f"📥 Descargar CSV",
+                                    data=csv,
+                                    file_name=f"infantil_{key_cat.replace(' ', '_')}.csv",
+                                    mime="text/csv",
+                                    key=f"dl_infantil_{key_cat}"
+                                )
+                    if not hay_infantil:
+                        st.info("ℹ️ No se encontraron recomendaciones para la sección Infantil con los filtros actuales.")
