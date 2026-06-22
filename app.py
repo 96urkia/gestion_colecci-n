@@ -109,21 +109,28 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         return pd.DataFrame()
 
 @st.cache_data(ttl=1800, hash_funcs={sqlite3.Connection: lambda _: None})
-def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, profundidad=3):
+def obtener_recomendaciones_por_cdu(conexion, bibliotecas_str, limite_por_cdu=10, profundidad=3):
     """
-    Versión segura para cache: recibimos un string en lugar de lista/tupla.
+    Versión segura para caché: recibimos un string separado por '||' 
+    para poder generar un hash válido.
     """
-    # Convertir string de vuelta a lista
+    
+    # 1. Convertir el string de entrada a una lista real para la consulta
     if isinstance(bibliotecas_str, str):
         bibliotecas = [b.strip() for b in bibliotecas_str.split("||")]
     else:
-        bibliotecas = ["Monteagudo"]
+        # Fallback por si acaso llega algo que no es string
+        bibliotecas = [str(bibliotecas_str)]
+   
+    if not bibliotecas or bibliotecas == ['']:
+        return pd.DataFrame()
     
+    # 2. Generar placeholders para la consulta SQL
     placeholders = ','.join(['?'] * len(bibliotecas))
-    
+   
     query = f"""
         WITH cdu_prefix AS (
-            SELECT 
+            SELECT
                 l.id_sistema,
                 l.titulo,
                 l.autor,
@@ -136,7 +143,7 @@ def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, pr
             WHERE l.cdu IS NOT NULL AND TRIM(l.cdu) != ''
             GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
         )
-        SELECT 
+        SELECT
             cdu3,
             id_sistema,
             titulo,
@@ -146,27 +153,30 @@ def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, pr
             total_bibliotecas
         FROM cdu_prefix
         WHERE id_sistema NOT IN (
-            SELECT DISTINCT id_sistema 
-            FROM ejemplares 
+            SELECT DISTINCT id_sistema
+            FROM ejemplares
             WHERE TRIM(UPPER(biblioteca)) IN ({placeholders})
         )
         ORDER BY cdu3, total_bibliotecas DESC
     """
-    
+   
     try:
-        params = [str(b).strip() for b in bibliotecas]
+        # 3. Ejecutar consulta
+        params = [b.upper() for b in bibliotecas]
         df = pd.read_sql_query(query, conexion, params=params)
-        
+       
         if df.empty:
             return pd.DataFrame()
-            
+           
+        # 4. Procesar el resultado
         return df.groupby('cdu3', group_keys=False).apply(
             lambda x: x.nlargest(limite_por_cdu, 'total_bibliotecas')
         ).reset_index(drop=True)
-        
+       
     except Exception as e:
         st.error(f"Error en recomendaciones por CDU: {e}")
         return pd.DataFrame()
+
 
 
 # ==========================================
