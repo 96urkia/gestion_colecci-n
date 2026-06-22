@@ -674,7 +674,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             st.markdown(f"**Resultados encontrados: {len(df_final_expurgo)} documentos**")
             
             tabla_mostrar = df_final_expurgo[['record_id', 'signatura_real', 'titulo', 'year', 'categoria', 'prestamos']].copy()
-            tabla_mostrar.columns = ['Signatura', 'Título', 'Año', 'Categoría', 'Préstamos']
+            tabla_mostrar.columns = ['id_sistema', 'Signatura', 'Título', 'Año', 'Categoría', 'Préstamos']
             
             st.dataframe(tabla_mostrar, use_container_width=True, hide_index=True)
 
