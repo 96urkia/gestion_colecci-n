@@ -108,12 +108,16 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=1800, hash_funcs={list: lambda x: tuple(sorted(x)) if isinstance(x, list) else x})
-def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, profundidad=3):
-    bibliotecas = list(bibliotecas) if isinstance(bibliotecas, tuple) else [bibliotecas] if isinstance(bibliotecas, str) else bibliotecas
-    
-    if not bibliotecas:
-        return pd.DataFrame()
+@st.cache_data(ttl=1800)
+def obtener_recomendaciones_por_cdu(conexion, bibliotecas_str: str, limite_por_cdu=10, profundidad=3):
+    """
+    Versión segura para cache: recibimos un string en lugar de lista/tupla.
+    """
+    # Convertir string de vuelta a lista
+    if isinstance(bibliotecas_str, str):
+        bibliotecas = [b.strip() for b in bibliotecas_str.split("||")]
+    else:
+        bibliotecas = ["Monteagudo"]
     
     placeholders = ','.join(['?'] * len(bibliotecas))
     
@@ -163,6 +167,7 @@ def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, pr
     except Exception as e:
         st.error(f"Error en recomendaciones por CDU: {e}")
         return pd.DataFrame()
+
 
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
@@ -687,55 +692,43 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         
         with col_r2:
             if st.button("🔄 Actualizar Recomendaciones CDU", type="primary"):
-                if 'recom_cdu' in st.session_state:
-                    del st.session_state['recom_cdu']
                 st.rerun()
         
         with st.spinner("Buscando recomendaciones por CDU..."):
-            # === CORRECCIÓN DEL ERROR ===
-            # Convertimos a tupla para que @st.cache_data funcione
+            # Convertimos a string para evitar problemas de cache
             if 'bibliotecas_seleccionadas' in locals() and bibliotecas_seleccionadas:
-                bib_input = tuple(sorted(bibliotecas_seleccionadas))
+                bib_str = "||".join(sorted(bibliotecas_seleccionadas))
             else:
-                bib_input = tuple([biblioteca_seleccionada]) if 'biblioteca_seleccionada' in locals() else ("Monteagudo",)
+                bib_str = biblioteca_seleccionada if 'biblioteca_seleccionada' in locals() else "Monteagudo"
             
             df_recom = obtener_recomendaciones_por_cdu(
                 conn, 
-                bib_input, # ← Tupla aquí
+                bib_str, # ← String seguro para cache
                 limite_por_cdu=limite_cdu
             )
         
         if df_recom.empty:
-            st.warning("No se encontraron recomendaciones por CDU. Tu colección puede ser muy completa en la mayoría de áreas.")
+            st.warning("No se encontraron recomendaciones por CDU.")
         else:
-            st.success(f"✅ Se encontraron recomendaciones en **{df_recom['cdu3'].nunique()}** categorías CDU")
+            st.success(f"✅ Recomendaciones en **{df_recom['cdu3'].nunique()}** categorías CDU")
             
-            # Agrupar por CDU3 para mostrar en expanders
             for cdu3, group in df_recom.groupby('cdu3'):
-                with st.expander(f"📘 **{cdu3}** — {len(group)} recomendaciones populares", expanded=False):
-                    st.caption(f"Libros más presentes en Navarra con CDU que empieza por **{cdu3}**")
-                    
+                with st.expander(f"📘 **{cdu3}** — {len(group)} recomendaciones", expanded=False):
                     display_cols = ['titulo', 'autor', 'anio', 'cdu', 'total_bibliotecas']
-                    group_display = group[display_cols].copy()
-                    group_display = group_display.rename(columns={
-                        'titulo': 'Título',
-                        'autor': 'Autor',
-                        'anio': 'Año',
-                        'cdu': 'CDU Completa',
+                    group_display = group[display_cols].rename(columns={
+                        'titulo': 'Título', 
+                        'autor': 'Autor', 
+                        'anio': 'Año', 
+                        'cdu': 'CDU', 
                         'total_bibliotecas': 'Bibliotecas en Navarra'
                     })
                     
-                    st.dataframe(
-                        group_display,
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    st.dataframe(group_display, use_container_width=True, hide_index=True)
                     
                     csv = group_display.to_csv(index=False, sep=';')
                     st.download_button(
-                        label=f"⬇️ Descargar recomendaciones {cdu3}",
+                        label=f"⬇️ Descargar {cdu3}",
                         data=csv,
-                        file_name=f"recomendaciones_{cdu3}.csv",
-                        mime="text/csv",
-                        key=f"dl_{cdu3}"
+                        file_name=f"recom_{cdu3}.csv",
+                        mime="text/csv"
                     )
