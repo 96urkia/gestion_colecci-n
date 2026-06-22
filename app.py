@@ -454,19 +454,19 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         # C) ANÁLISIS PROFUNDO POR SIGNATURA
         with subtab_signatura:
             st.subheader("🔎 Auditoría y Expurgo de Colección")
-            st.write("Filtra el fondo detallado paso a paso para localizar libros obsoletos, desgastados o perdidos.")
+            st.write("Busca y filtra el fondo detallado para localizar libros obsoletos, desgastados o con rendimiento irregular.")
            
-            # Función auxiliar de seguridad para asegurar que la columna existe
+            # Función de seguridad para la clasificación de secciones
             def identificar_infantil(categoria):
                 cat_str = str(categoria).upper()
                 if "INFANTIL" in cat_str or "JUVENIL" in cat_str: return True
                 if re.match(r'^(I[0-9]?|JN|IC|IP|IT)(\s|$)', cat_str): return True
                 return False
 
-            # Aseguramos que la clasificación está aplicada en el dataframe
+            # Aseguramos la columna de control en el dataframe de trabajo
             df_completo['es_infantil'] = df_completo['categoria'].apply(identificar_infantil)
 
-            # --- 1. FILTRO DE PÚBLICO ---
+            # --- 1. FILTRO DE PÚBLICO / SECCIÓN ---
             filtro_pub = st.radio("1. Selecciona la Sección:", ["📚 Todo el fondo", "👨‍💼 Solo Adultos", "👶 Solo Infantil / Juvenil"], horizontal=True)
             
             df_nivel1 = df_completo.copy()
@@ -477,43 +477,62 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
             st.markdown("---")
 
-            # --- 2. FILTROS EN CASCADA ---
-            col_exp1, col_exp2, col_exp3 = st.columns(3)
+            # --- 2. BUSCADOR DIRECTO Y PRÉSTAMOS ---
+            col_busqueda, col_prestamos = st.columns([2, 1])
             
-            with col_exp1:
-                # El desplegable de categoría solo muestra las que existen en la sección elegida
-                opciones_cat = ["Todas"] + sorted(df_nivel1['categoria'].dropna().unique().tolist())
-                filtro_cat = st.selectbox("2. Categoría Principal:", opciones_cat)
-
-            # Filtramos el df temporalmente para saber qué sub-signaturas existen dentro de esa categoría
-            df_nivel2 = df_nivel1.copy()
-            if filtro_cat != "Todas":
-                df_nivel2 = df_nivel2[df_nivel2['categoria'] == filtro_cat]
-
-            with col_exp2:
-                # Extraemos la raíz matemática de la signatura real (ej: de 821-31 saca 82, de N ESP saca N)
-                def extraer_raiz(sig):
-                    s = str(sig).strip().upper()
-                    m = re.match(r'^([A-Z]*\s*\d{2})', s) # Capta "82", "I 82", "JN 82"
-                    if m: return m.group(1)
-                    return s.split()[0][:3] # Para ficción capta la primera letra/palabra (ej: 'N', 'C')
-
-                # Generamos las opciones dinámicas basadas en los libros reales que han quedado en el filtro
-                raices_existentes = df_nivel2['signatura_real'].dropna().apply(extraer_raiz).unique()
-                opciones_sub = ["Todas"] + sorted(raices_existentes.tolist())
+            with col_busqueda:
+                # El método .strip().upper() asegura homogeneidad con los datos del catálogo
+                busqueda_sig = st.text_input(
+                    "⌨️ Buscador rápido por Signatura (ej: '004', '821-3', 'N ESP'):", 
+                    value=""
+                ).strip().upper()
                 
-                filtro_sub = st.selectbox("3. Sub-signatura (Empieza por...):", opciones_sub)
+            with col_prestamos:
+                filtro_pr = st.selectbox("Historial Préstamos:", ["Todos", "Nunca prestado (0)", "Préstamo Estándar (1)", "Alta Demanda (2)"])
 
-            with col_exp3:
-                filtro_pr = st.selectbox("4. Historial Préstamos:", ["Todos", "Nunca prestado (0)", "Préstamo Estándar (1)", "Alta Demanda (2)"])
+            # --- 3. FILTROS AVANZADOS DE APOYO (DESPLEGABLES) ---
+            # Se contraen en un expansor para no sobrecargar la pantalla si se usa el buscador directo
+            with st.expander("🛠️ Filtros avanzados por árbol de categorías (CDU / Tejuelos)"):
+                col_exp1, col_exp2 = st.columns(2)
+                
+                with col_exp1:
+                    opciones_cat = ["Todas"] + sorted(df_nivel1['categoria'].dropna().unique().tolist())
+                    filtro_cat = st.selectbox("Categoría Principal:", opciones_cat)
 
-            # --- 3. APLICAR FILTROS FINALES ---
-            df_final_expurgo = df_nivel2.copy()
+                # Pasamos el filtro de categoría al dataframe intermedio de los desplegables
+                df_nivel2 = df_nivel1.copy()
+                if filtro_cat != "Todas":
+                    df_nivel2 = df_nivel2[df_nivel2['categoria'] == filtro_cat]
+
+                with col_exp2:
+                    def extraer_raiz(sig):
+                        s = str(sig).strip().upper()
+                        m = re.match(r'^([A-Z]*\s*\d{2})', s)
+                        if m: return m.group(1)
+                        return s.split()[0][:3]
+
+                    raices_existentes = df_nivel2['signatura_real'].dropna().apply(extraer_raiz).unique()
+                    opciones_sub = ["Todas"] + sorted(raices_existentes.tolist())
+                    filtro_sub = st.selectbox("Sub-signatura de la categoría:", opciones_sub)
+
+            # --- 4. APLICACIÓN DE LA LÓGICA DE FILTRADO COMBINADA ---
+            df_final_expurgo = df_nivel1.copy()
             
-            if filtro_sub != "Todas":
-                # Filtramos asegurando que la signatura real comience por la sub-signatura elegida
-                df_final_expurgo = df_final_expurgo[df_final_expurgo['signatura_real'].str.upper().str.startswith(filtro_sub, na=False)]
+            # A) Si el usuario escribe en el buscador, este tiene prioridad sobre los desplegables
+            if busqueda_sig:
+                df_final_expurgo = df_final_expurgo[
+                    df_final_expurgo['signatura_real'].str.upper().str.strip().str.startswith(busqueda_sig, na=False)
+                ]
+            else:
+                # B) Si el buscador está vacío, operan los desplegables estructurados
+                if filtro_cat != "Todas":
+                    df_final_expurgo = df_final_expurgo[df_final_expurgo['categoria'] == filtro_cat]
+                if filtro_sub != "Todas":
+                    df_final_expurgo = df_final_expurgo[
+                        df_final_expurgo['signatura_real'].str.upper().str.startswith(filtro_sub, na=False)
+                    ]
             
+            # C) El filtro de uso por préstamos se aplica siempre de forma transversal
             if "Nunca" in filtro_pr:
                 df_final_expurgo = df_final_expurgo[df_final_expurgo['prestamos'] == 0]
             elif "Estándar" in filtro_pr:
@@ -521,10 +540,9 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             elif "Alta" in filtro_pr:
                 df_final_expurgo = df_final_expurgo[df_final_expurgo['prestamos'] == 2]
 
-            # --- 4. RENDERIZAR TABLA ---
+            # --- 5. RENDERIZADO DE RESULTADOS ---
             st.markdown(f"**Resultados encontrados: {len(df_final_expurgo)} documentos**")
             
-            # Formatear la tabla final para que sea cómoda de leer
             tabla_mostrar = df_final_expurgo[['record_id', 'signatura_real', 'titulo', 'year', 'categoria', 'prestamos']].copy()
             tabla_mostrar.columns = ['ID Sistema', 'Signatura', 'Título', 'Año', 'Categoría', 'Préstamos']
             
