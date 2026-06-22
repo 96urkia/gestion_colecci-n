@@ -783,39 +783,46 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     '9': '9 - Geografía. Biografías. Historia'
                 }
 
-                # Función que examina los tejuelos de las bibliotecas secuencialmente
+                # Función que examina los tejuelos y respeta estrictamente los espacios
                 def buscar_tejuelo_infantil(todas_sigs):
                     if not todas_sigs:
                         return "Infantil (General)"
                     
-                    # Separar los tejuelos de cada ejemplar mapeado en la red
                     sigs = [s.strip().upper() for s in str(todas_sigs).split('||') if s.strip()]
                     
-                    # Recorrer en orden: primera biblioteca, si no coincide pasa a la segunda, etc.
                     for sig in sigs:
-                        # Detectar patrones de edad válidos (I0-I3, JN, I5-I9 con o sin espacios)
-                        match = re.search(r'\b(I\s*[0-35-9]|JN)\b', sig)
+                        # Buscamos: Materias (I + espacio + dígito), Edades (I0 a I3 o JN), o Materias mal escritas (I4 a I9 sin espacio)
+                        match = re.search(r'\b(I\s+[0-9]|I[0-3]|JN|I[4-9])\b', sig)
                         if match:
-                            # Normalizar eliminando espacios (ej: "I 1" -> "I1") para agrupar bajo la misma carpeta
-                            val = match.group(1).replace(" ", "")
+                            val = match.group(1)
+                            
+                            # Lógica de limpieza y normalización:
+                            if re.match(r'^I\s+[0-9]$', val):
+                                # Si tiene espacio, garantizamos que sea solo 1 (por si pusieron "I 2")
+                                val = re.sub(r'\s+', ' ', val)
+                            elif re.match(r'^I[4-9]$', val):
+                                # Si es de I4 a I9 sin espacio, lo forzamos a materia añadiendo el espacio (Ej: "I7" -> "I 7")
+                                val = f"I {val[1]}"
+                                
+                            # Si termina siendo I0, I1, I2, I3 o JN, se queda pegado. Si es materia, mantiene su espacio.
                             return f"Infantil ({val})"
                     
                     return "Infantil (General)"
 
-                # Función de clasificación distributiva bajo tus nuevas reglas
+                # Función de clasificación distributiva
                 def clasificar_libro(row):
                     cdu = str(row["cdu"]).strip().upper()
                     
-                    # Matización 1: Ficción Adultos si empieza por 821
+                    # 1: Ficción Adultos si empieza por 821
                     if cdu.startswith("821"):
-                        return "Ficción Adultos", "821"
+                        return "Ficción Adultos (821)", "821"
                     
-                    # Matización 2: Infantil si empieza por 087.5 (buscando tejuelo secuencial)
+                    # 2: Infantil si empieza por 087.5
                     if cdu.startswith("087.5"):
                         cat_infantil = buscar_tejuelo_infantil(row.get("todas_signaturas", ""))
                         return cat_infantil, f"087.5_{cat_infantil}"
                     
-                    # Comportamiento general por defecto para el resto de la colección
+                    # Comportamiento general por defecto
                     if not cdu or cdu == "NAN":
                         return "Sin clasificar", "Z"
                     
@@ -841,14 +848,14 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
                 st.markdown("### 📚 Categorías y Clases Estructuradas")
                 
-                # Obtener listado de categorías únicas encontradas en base al orden jerárquico establecido
+                # Obtener listado de categorías únicas encontradas
                 categorias_unicas = df[["categoria_nombre", "categoria_orden"]].drop_duplicates().sort_values("categoria_orden")
 
                 for _, row_cat in categorias_unicas.iterrows():
                     cat_nombre = row_cat["categoria_nombre"]
                     cat_orden = row_cat["categoria_orden"]
                     
-                    # Filtrar el dataframe y limitar según la preferencia del slider/number_input
+                    # Filtrar el dataframe y limitar
                     df_grupo = df[df["categoria_nombre"] == cat_nombre].copy().head(limite_cdu)
                     if df_grupo.empty:
                         continue
@@ -872,12 +879,12 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         with col_m2:
                             st.metric("Presencia Máxima", f"{int(df_grupo['id_red_bibliotecas'].max())} bibs.")
 
-                        # Descarga de un CSV independiente por cada expander dinámico
+                        # Descarga del CSV
                         csv = df_grupo[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].to_csv(index=False, sep=';', encoding="utf-8-sig")
                         st.download_button(
                             label=f"📥 Descargar CSV de {cat_nombre}",
                             data=csv,
-                            file_name=f"recomendaciones_{cat_orden.replace('.', '_')}.csv",
+                            file_name=f"recomendaciones_{cat_orden.replace('.', '_').replace(' ', '_')}.csv",
                             mime="text/csv",
                             key=f"dl_tab5_{cat_orden}"
                         )
