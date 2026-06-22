@@ -55,33 +55,29 @@ conn = obtener_conexion_db()
 # ==========================================
 # FUNCIÓN DE RECOMENDACIONES AUTOMÁTICAS
 # ==========================================
-def obtener_recomendaciones_automaticas(conexion, mis_ids, limite=50):
-    if not conexion or not mis_ids:
+def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca_usuario, limite=50):
+    if not conexion:
         return pd.DataFrame()
     try:
-        # Ahora incluimos el AUTOR y el AÑO en el SELECT y en el GROUP BY
+        # Esta consulta busca libros que NO estén en la biblioteca 'Monteagudo'
+        # y los ordena por los que tienen más copias en el resto de la red.
         query = """
             SELECT 
-                e.id_sistema as record_id, 
+                l.id_sistema as record_id, 
                 l.titulo, 
                 l.autor, 
                 l.anio, 
                 COUNT(DISTINCT e.biblioteca) as total_bibliotecas
-            FROM ejemplares e
-            JOIN libros l ON e.id_sistema = l.id_sistema
-            GROUP BY e.id_sistema, l.titulo, l.autor, l.anio
+            FROM libros l
+            JOIN ejemplares e ON l.id_sistema = e.id_sistema
+            WHERE l.id_sistema NOT IN (
+                SELECT id_sistema FROM ejemplares WHERE biblioteca = ?
+            )
+            GROUP BY l.id_sistema, l.titulo, l.autor, l.anio
             ORDER BY total_bibliotecas DESC
         """
-        df_global = pd.read_sql_query(query, conexion)
-        
-        # Conversión de seguridad para asegurar que el cruce de IDs funcione
-        df_global['record_id'] = pd.to_numeric(df_global['record_id'], errors='coerce')
-        
-        # Filtramos los libros que ya tienes
-        df_recomendados = df_global[~df_global['record_id'].isin(mis_ids)].copy()
-        
-        # Opcional: podrías ordenar también por año si quisieras priorizar novedades
-        # df_recomendados = df_recomendados.sort_values(by=['total_bibliotecas', 'anio'], ascending=[False, False])
+        # Pasamos el nombre de tu biblioteca como parámetro de seguridad
+        df_recomendados = pd.read_sql_query(query, conexion, params=(nombre_biblioteca_usuario,))
         
         return df_recomendados.head(limite)
         
