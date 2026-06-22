@@ -1,6 +1,12 @@
 import os
 import sqlite3
-import urllib.request  # <--- Crucial para activar la descarga
+import urllib.request
+import streamlit as st
+import pandas as pd
+import numpy as np
+import re
+import plotly.express as px
+
 
 # ==========================================
 # CONFIGURACIÓN DE BASE DE DATOS (CORREGIDA)
