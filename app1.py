@@ -108,6 +108,95 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=1800, hash_funcs={sqlite3.Connection: lambda _: None})
+def obtener_recomendaciones_por_cdu(conexion, bibliotecas_str, limite_por_cdu=10):
+
+    if not bibliotecas_str:
+        return pd.DataFrame()
+
+    # Convertir a lista
+    bibliotecas = [
+        b.strip().upper()
+        for b in bibliotecas_str.split("||")
+        if b.strip()
+    ]
+
+    if not bibliotecas:
+        return pd.DataFrame()
+
+    placeholders = ",".join(["?"] * len(bibliotecas))
+
+    query = f"""
+    SELECT
+        l.id_sistema,
+        l.titulo,
+        l.autor,
+        l.anio,
+        l.cdu,
+        SUBSTR(COALESCE(l.cdu,''),1,3) AS cdu_base,
+        COUNT(e.id) AS ejemplares,
+        COUNT(DISTINCT e.biblioteca) AS bibliotecas
+    FROM libros l
+    JOIN ejemplares e
+        ON l.id_sistema = e.id_sistema
+    WHERE l.id_sistema NOT IN (
+        SELECT DISTINCT id_sistema
+        FROM ejemplares
+        WHERE UPPER(TRIM(biblioteca)) IN ({placeholders})
+    )
+    GROUP BY
+        l.id_sistema,
+        l.titulo,
+        l.autor,
+        l.anio,
+        l.cdu
+    """
+
+    try:
+        df = pd.read_sql_query(
+            query,
+            conexion,
+            params=bibliotecas
+        )
+
+        if df.empty:
+            return pd.DataFrame()
+
+        # Puntuación
+        df["score"] = (
+            df["bibliotecas"] * 10
+            + df["ejemplares"]
+        )
+
+        # Evitar CDU vacías
+        df["cdu_base"] = (
+            df["cdu_base"]
+            .fillna("SIN")
+            .astype(str)
+        )
+
+        # Top N por CDU
+        resultado = []
+
+        for _, grupo in df.groupby("cdu_base"):
+            top = grupo.sort_values(
+                "score",
+                ascending=False
+            ).head(limite_por_cdu)
+
+            resultado.append(top)
+
+        if resultado:
+            return pd.concat(resultado).reset_index(drop=True)
+
+        return pd.DataFrame()
+
+    except Exception as e:
+        st.error(f"Error SQL: {e}")
+        st.exception(e)
+        return pd.DataFrame()
+
+
 
 
 # ==========================================
@@ -322,11 +411,12 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Distribución y Uso", 
         "📚 Análisis por Categorías", 
         "🔎 Análisis exhaustivo por CDU", 
-        "📋 Explorador de Colección"
+        "📋 Explorador de Colección",
+        "🎯 Recomendaciones por CDU" # ← Nueva pestaña
     ])
 
     with tab1:
@@ -620,4 +710,79 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             else:
                 st.info("No se pudieron cargar recomendaciones o tu biblioteca ya tiene todo el catálogo.")
         else:
-            st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pe
+            st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
+
+    with tab5:
+
+    st.subheader("🎯 Recomendaciones de adquisición por CDU")
+
+    if conn is None:
+        st.error("No se pudo conectar con la base de datos.")
+    else:
+
+        limite_cdu = st.slider(
+            "Número de recomendaciones por CDU",
+            min_value=1,
+            max_value=50,
+            value=10
+        )
+
+        bib_str = biblioteca_seleccionada
+
+        if st.button(
+            "Generar recomendaciones",
+            key="btn_recomendaciones"
+        ):
+
+            with st.spinner("Buscando recomendaciones..."):
+
+                df_recom = obtener_recomendaciones_por_cdu(
+                    conn,
+                    bib_str,
+                    limite_por_cdu=limite_cdu
+                )
+
+            if df_recom.empty:
+
+                st.warning(
+                    "No se encontraron recomendaciones."
+                )
+
+            else:
+
+                st.success(
+                    f"Se encontraron {len(df_recom)} títulos recomendados."
+                )
+
+                columnas_mostrar = [
+                    "cdu_base",
+                    "titulo",
+                    "autor",
+                    "anio",
+                    "bibliotecas",
+                    "ejemplares",
+                    "score"
+                ]
+
+                columnas_existentes = [
+                    c
+                    for c in columnas_mostrar
+                    if c in df_recom.columns
+                ]
+
+                st.dataframe(
+                    df_recom[columnas_existentes],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                csv = df_recom.to_csv(
+                    index=False
+                ).encode("utf-8")
+
+                st.download_button(
+                    "📥 Descargar CSV",
+                    csv,
+                    file_name="recomendaciones_cdu.csv",
+                    mime="text/csv"
+                )
