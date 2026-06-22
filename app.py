@@ -52,6 +52,10 @@ conn = obtener_conexion_db()
 # --- FUNCIÓN PARA RECOMENDACIONES --
 
 def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca, limite=50):
+    if not isinstance(nombre_biblioteca, str):
+        st.error(f"❌ Error: Se esperaba un nombre de biblioteca (texto), pero se recibió {type(nombre_biblioteca)}")
+        return pd.DataFrame()
+    
     query = """
         SELECT
             l.id_sistema,
@@ -70,7 +74,14 @@ def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca, limite=50):
         ORDER BY total_bibliotecas DESC
         LIMIT ?
     """
-    return pd.read_sql_query(query, conexion, params=(nombre_biblioteca, int(limite)))
+    try:
+        df = pd.read_sql_query(query, conexion, params=(nombre_biblioteca, int(limite)))
+        st.success(f"✅ {len(df)} recomendaciones cargadas para '{nombre_biblioteca}'")
+        return df
+    except Exception as e:
+        st.error(f"Error en la consulta de recomendaciones: {e}")
+        return pd.DataFrame()
+
 
 
 # ==========================================
