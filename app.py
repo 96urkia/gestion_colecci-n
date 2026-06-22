@@ -49,33 +49,28 @@ def obtener_conexion_db():
 # Inicializar la conexión
 conn = obtener_conexion_db()
 
-def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca_usuario, limite=50):
-    if not conexion:
-        return pd.DataFrame()
-    try:
-        query = """
-            SELECT 
-                l.id_sistema as record_id, 
-                l.titulo, 
-                l.autor, 
-                l.anio, 
-                COUNT(DISTINCT e.biblioteca) as total_bibliotecas
-            FROM libros l
-            JOIN ejemplares e ON l.id_sistema = e.id_sistema
-            WHERE l.id_sistema NOT IN (
-                SELECT id_sistema FROM ejemplares WHERE biblioteca = ?
-            )
-            GROUP BY l.id_sistema, l.titulo, l.autor, l.anio
-            ORDER BY total_bibliotecas DESC
-            LIMIT ?
-        """
-        
-        # FORZAMOS la creación de una tupla para evitar el error de tipo 'list'
-        params = (str(nombre_biblioteca_usuario), int(limite))
-        
-        df_recomendados = pd.read_sql_query(query, conexion, params=params)
-        
-        return df_recomendados
+# --- FUNCIÓN PARA RECOMENDACIONES --
+
+def obtener_recomendaciones_automaticas(conexion, nombre_biblioteca, limite=50):
+    query = """
+        SELECT 
+            l.id_sistema, 
+            l.titulo, 
+            l.autor, 
+            l.anio, 
+            COUNT(DISTINCT e.biblioteca) as total_bibliotecas
+        FROM libros l
+        JOIN ejemplares e ON l.id_sistema = e.id_sistema
+        GROUP BY l.id_sistema
+        HAVING l.id_sistema NOT IN (
+            SELECT id_sistema 
+            FROM ejemplares 
+            WHERE TRIM(biblioteca) = TRIM(?)
+        )
+        ORDER BY total_bibliotecas DESC
+        LIMIT ?
+    """
+    return pd.read_sql_query(query, conexion, params=(nombre_biblioteca, int(limite)))
         
     except Exception as e:
         st.error(f"Error al generar las recomendaciones: {e}")
