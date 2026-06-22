@@ -563,56 +563,56 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     # --- LÓGICA EXCLUSIVA DE TAB 4 ---
-with tab4:
-    st.header("⚙️ Procesamiento Avanzado de la Base de Datos")
-    
-    if conn:
-        try:
-            # 1. Obtener de forma dinámica las tablas disponibles en el archivo .db
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            tablas = [fila[0] for fila in cursor.fetchall()]
-            
-            if tablas:
-                tabla_seleccionada = st.selectbox("Selecciona la tabla a analizar:", options=tablas)
+    with tab4:
+        st.header("⚙️ Procesamiento Avanzado de la Base de Datos")
+        
+        if conn:
+            try:
+                # 1. Obtener de forma dinámica las tablas disponibles en el archivo .db
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tablas = [fila[0] for fila in cursor.fetchall()]
                 
-                # 2. Obtener las columnas de la tabla seleccionada sin cargar datos
-                cursor.execute(f"PRAGMA table_info({tabla_seleccionada});")
-                columnas = [fila[1] for fila in cursor.fetchall()]
-                
-                columna_objetivo = st.selectbox("Selecciona la columna para el análisis técnico:", options=columnas)
-                
-                # Opción de limpieza física mediante SQL
-                ignorar_nulos = st.checkbox("Excluir registros vacíos (NULL) en el conteo")
-                
-                st.divider()
-                
-                if st.button("Ejecutar Análisis en Base de Datos", type="primary"):
-                    with st.spinner("Calculando métricas mediante consultas SQL optimizadas..."):
-                        
-                        # Construcción de consultas eficientes (evitamos traer filas enteras)
-                        where_clause = f"WHERE {columna_objetivo} IS NOT NULL" if ignorar_nulos else ""
-                        
-                        query_total = f"SELECT COUNT(*) FROM {tabla_seleccionada} {where_clause};"
-                        query_unicos = f"SELECT COUNT(DISTINCT {columna_objetivo}) FROM {tabla_seleccionada} {where_clause};"
-                        
-                        total_registros = pd.read_sql_query(query_total, conn).iloc[0, 0]
-                        valores_unicos = pd.read_sql_query(query_unicos, conn).iloc[0, 0]
-                        
-                        # Mostrar métricas en la interfaz
-                        col1, col2 = st.columns(2)
-                        col1.metric("Total Registros", f"{total_registros:,}")
-                        col2.metric("Valores Únicos", f"{valores_unicos:,}")
-                        
-                        # 3. Traer únicamente una muestra pequeña (ej. 10 filas) para la vista previa
-                        st.markdown("##### Vista previa de los primeros 10 registros:")
-                        query_muestra = f"SELECT {columna_objetivo} FROM {tabla_seleccionada} {where_clause} LIMIT 10;"
-                        df_muestra = pd.read_sql_query(query_muestra, conn)
-                        st.dataframe(df_muestra, use_container_width=True)
-                        
-            else:
-                st.warning("El archivo de base de datos no contiene tablas válidas.")
-                
+                if tablas:
+                    tabla_seleccionada = st.selectbox("Selecciona la tabla a analizar:", options=tablas)
+                    
+                    # 2. Obtener las columnas de la tabla seleccionada sin cargar datos
+                    cursor.execute(f"PRAGMA table_info({tabla_seleccionada});")
+                    columnas = [fila[1] for fila in cursor.fetchall()]
+                    
+                    columna_objetivo = st.selectbox("Selecciona la columna para el análisis técnico:", options=columnas)
+                    
+                    # Opción de limpieza física mediante SQL
+                    ignorar_nulos = st.checkbox("Excluir registros vacíos (NULL) en el conteo")
+                    
+                    st.divider()
+                    
+                    if st.button("Ejecutar Análisis en Base de Datos", type="primary"):
+                        with st.spinner("Calculando métricas mediante consultas SQL optimizadas..."):
+                            
+                            # Construcción de consultas eficientes (evitamos traer filas enteras)
+                            where_clause = f"WHERE {columna_objetivo} IS NOT NULL" if ignorar_nulos else ""
+                            
+                            query_total = f"SELECT COUNT(*) FROM {tabla_seleccionada} {where_clause};"
+                            query_unicos = f"SELECT COUNT(DISTINCT {columna_objetivo}) FROM {tabla_seleccionada} {where_clause};"
+                            
+                            total_registros = pd.read_sql_query(query_total, conn).iloc[0, 0]
+                            valores_unicos = pd.read_sql_query(query_unicos, conn).iloc[0, 0]
+                            
+                            # Mostrar métricas en la interfaz
+                            col1, col2 = st.columns(2)
+                            col1.metric("Total Registros", f"{total_registros:,}")
+                            col2.metric("Valores Únicos", f"{valores_unicos:,}")
+                            
+                            # 3. Traer únicamente una muestra pequeña (ej. 10 filas) para la vista previa
+                            st.markdown("##### Vista previa de los primeros 10 registros:")
+                            query_muestra = f"SELECT {columna_objetivo} FROM {tabla_seleccionada} {where_clause} LIMIT 10;"
+                            df_muestra = pd.read_sql_query(query_muestra, conn)
+                            st.dataframe(df_muestra, use_container_width=True)
+                            
+                else:
+                    st.warning("El archivo de base de datos no contiene tablas válidas.")
+                    
         except Exception as e:
             st.error(f"Error al consultar la estructura de la base de datos: {e}")
     else:
