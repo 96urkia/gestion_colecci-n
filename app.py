@@ -604,7 +604,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             mis_libros_ids = df_tu_biblioteca['record_id'].tolist()
             
             with st.spinner("Calculando faltantes más populares..."):
-                df_top_compras = obtener_recomendaciones_automaticas(conn, mis_libros_ids, limite=20)
+                df_top_compras = obtener_recomendaciones_automaticas(conn, "Monteagudo", limite=20)
                 
             if not df_top_compras.empty:
                 st.dataframe(
