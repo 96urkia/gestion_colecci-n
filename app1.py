@@ -712,7 +712,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         else:
             st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
 
-    with tab5:
+       with tab5:
         st.subheader("🎯 Recomendaciones de adquisición por CDU (estructuradas)")
 
         if conn is None:
@@ -722,7 +722,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             col_filtros1, col_filtros2 = st.columns(2)
             with col_filtros1:
                 limite_cdu = st.number_input(
-                    "Máximo de recomendaciones por CDU:",
+                    "Máximo de recomendaciones por categoría:",
                     min_value=1,
                     max_value=100,
                     value=10,
@@ -741,7 +741,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
             biblioteca = biblioteca_seleccionada.upper().strip()
 
-            # Consulta SQL eficiente que filtra por año directamente en la base de datos
+            # Consulta SQL modificada para extraer los tejuelos de los ejemplares de la Red
             query = """
             SELECT
                 l.id_sistema,
@@ -749,7 +749,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 l.autor,
                 l.anio,
                 l.cdu,
-                COUNT(DISTINCT e.biblioteca) AS id_red_bibliotecas
+                COUNT(DISTINCT e.biblioteca) AS id_red_bibliotecas,
+                GROUP_CONCAT(e.signatura, '||') AS todas_signaturas
             FROM libros l
             JOIN ejemplares e ON l.id_sistema = e.id_sistema
             WHERE l.id_sistema NOT IN (
@@ -768,28 +769,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             if df.empty:
                 st.warning("⚠️ No se encontraron recomendaciones con los filtros seleccionados.")
             else:
-                # Función para extraer el primer número o prefijo base de la CDU
-                def obtener_cdu_base(cdu):
-                    cdu = str(cdu).strip().upper()
-                    if not cdu or cdu == "NAN":
-                        return "Sin clasificar"
-                    
-                    m = re.match(r'^(\d)', cdu)
-                    if m:
-                        return m.group(1)
-                    m = re.match(r'^(\([0-9]+\))', cdu)
-                    if m:
-                        return m.group(1)
-                    m = re.match(r'^([A-Z]+)', cdu)
-                    if m:
-                        return m.group(1)
-                    return cdu[:1]
-
-                df["cdu_base"] = df["cdu"].apply(obtener_cdu_base)
-                df["score"] = df["id_red_bibliotecas"]
-                df = df.sort_values(["cdu_base", "score"], ascending=[True, False])
-
-                # Mapeo descriptivo oficial de las clases principales de la CDU
+                # Diccionario descriptivo estándar para el resto de las clases CDU
                 dicc_nombres_cdu = {
                     '0': '0 - Generalidades. Ciencia y Conocimiento',
                     '1': '1 - Filosofía. Psicología',
@@ -803,24 +783,87 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     '9': '9 - Geografía. Biografías. Historia'
                 }
 
-                st.markdown("### 📚 Clases de la CDU")
-                
-                # Lista única ordenada de las CDU bases encontradas en los resultados
-                cdu_list = sorted(df["cdu_base"].unique())
+                # Función que examina los tejuelos y respeta estrictamente los espacios
+                def buscar_tejuelo_infantil(todas_sigs):
+                    if not todas_sigs:
+                        return "Infantil (General)"
+                    
+                    sigs = [s.strip().upper() for s in str(todas_sigs).split('||') if s.strip()]
+                    
+                    for sig in sigs:
+                        # Buscamos: Materias (I + espacio + dígito), Edades (I0 a I3 o JN), o Materias mal escritas (I4 a I9 sin espacio)
+                        match = re.search(r'\b(I\s+[0-9]|I[0-3]|JN|I[4-9])\b', sig)
+                        if match:
+                            val = match.group(1)
+                            
+                            # Lógica de limpieza y normalización:
+                            if re.match(r'^I\s+[0-9]$', val):
+                                # Si tiene espacio, garantizamos que sea solo 1 (por si pusieron "I 2")
+                                val = re.sub(r'\s+', ' ', val)
+                            elif re.match(r'^I[4-9]$', val):
+                                # Si es de I4 a I9 sin espacio, lo forzamos a materia añadiendo el espacio (Ej: "I7" -> "I 7")
+                                val = f"I {val[1]}"
+                                
+                            # Si termina siendo I0, I1, I2, I3 o JN, se queda pegado. Si es materia, mantiene su espacio.
+                            return f"Infantil ({val})"
+                    
+                    return "Infantil (General)"
 
-                for cdu in cdu_list:
-                    # Filtrar y limitar los resultados por el grupo actual
-                    df_cdu = df[df["cdu_base"] == cdu].copy().head(limite_cdu)
-                    if df_cdu.empty:
+                # Función de clasificación distributiva
+                def clasificar_libro(row):
+                    cdu = str(row["cdu"]).strip().upper()
+                    
+                    # 1: Ficción Adultos si empieza por 821
+                    if cdu.startswith("821"):
+                        return "Ficción Adultos (821)", "821"
+                    
+                    # 2: Infantil si empieza por 087.5
+                    if cdu.startswith("087.5"):
+                        cat_infantil = buscar_tejuelo_infantil(row.get("todas_signaturas", ""))
+                        return cat_infantil, f"087.5_{cat_infantil}"
+                    
+                    # Comportamiento general por defecto
+                    if not cdu or cdu == "NAN":
+                        return "Sin clasificar", "Z"
+                    
+                    m = re.match(r'^(\d)', cdu)
+                    if m:
+                        return dicc_nombres_cdu.get(m.group(1), f"Clase {m.group(1)}"), m.group(1)
+                    m = re.match(r'^(\([0-9]+\))', cdu)
+                    if m:
+                        return f"Clasificación Especial {m.group(1)}", m.group(1)
+                    m = re.match(r'^([A-Z]+)', cdu)
+                    if m:
+                        return f"Clasificación Alfabética {m.group(1)}", m.group(1)
+                    
+                    return f"Otros ({cdu[:1]})", cdu[:1]
+
+                # Aplicar la lógica fila por fila
+                res_clasif = df.apply(clasificar_libro, axis=1)
+                df["categoria_nombre"] = [r[0] for r in res_clasif]
+                df["categoria_orden"] = [r[1] for r in res_clasif]
+                
+                df["score"] = df["id_red_bibliotecas"]
+                df = df.sort_values(["categoria_orden", "score"], ascending=[True, False])
+
+                st.markdown("### 📚 Categorías y Clases Estructuradas")
+                
+                # Obtener listado de categorías únicas encontradas
+                categorias_unicas = df[["categoria_nombre", "categoria_orden"]].drop_duplicates().sort_values("categoria_orden")
+
+                for _, row_cat in categorias_unicas.iterrows():
+                    cat_nombre = row_cat["categoria_nombre"]
+                    cat_orden = row_cat["categoria_orden"]
+                    
+                    # Filtrar el dataframe y limitar
+                    df_grupo = df[df["categoria_nombre"] == cat_nombre].copy().head(limite_cdu)
+                    if df_grupo.empty:
                         continue
                     
-                    nombre_expander = dicc_nombres_cdu.get(cdu, f"Clasificación Especial / Otros: {cdu}")
-                    
-                    # Estructura visual de menús desplegables similares a la pestaña 3
-                    with st.expander(f"📂 {nombre_expander} ({len(df_cdu)} títulos sugeridos)"):
+                    with st.expander(f"📂 {cat_nombre} ({len(df_grupo)} títulos sugeridos)"):
                         st.markdown("#### 📊 Títulos recomendados en la red")
                         
-                        df_mostrar = df_cdu[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].copy()
+                        df_mostrar = df_grupo[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].copy()
                         df_mostrar.columns = ["Título", "Autor", "Año", "CDU Completa", "Nº Bibliotecas Red"]
                         
                         st.dataframe(
@@ -832,16 +875,16 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         st.markdown("#### 📈 Métricas de la Selección")
                         col_m1, col_m2 = st.columns(2)
                         with col_m1:
-                            st.metric("Media de presencia en Red", f"{round(df_cdu['id_red_bibliotecas'].mean(), 1)} bibs.")
+                            st.metric("Media de presencia en Red", f"{round(df_grupo['id_red_bibliotecas'].mean(), 1)} bibs.")
                         with col_m2:
-                            st.metric("Presencia Máxima", f"{int(df_cdu['id_red_bibliotecas'].max())} bibs.")
+                            st.metric("Presencia Máxima", f"{int(df_grupo['id_red_bibliotecas'].max())} bibs.")
 
-                        # Botón para descargar el CSV específico de este menú colapsable
-                        csv = df_cdu[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].to_csv(index=False, sep=';', encoding="utf-8-sig")
+                        # Descarga del CSV
+                        csv = df_grupo[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].to_csv(index=False, sep=';', encoding="utf-8-sig")
                         st.download_button(
-                            label=f"📥 Descargar CSV de Clase {cdu}",
+                            label=f"📥 Descargar CSV de {cat_nombre}",
                             data=csv,
-                            file_name=f"recomendaciones_CDU_{cdu}.csv",
+                            file_name=f"recomendaciones_{cat_orden.replace('.', '_').replace(' ', '_')}.csv",
                             mime="text/csv",
-                            key=f"dl_tab5_{cdu}"
+                            key=f"dl_tab5_{cat_orden}"
                         )
