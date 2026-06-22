@@ -145,7 +145,7 @@ BIBLIOTECAS = {
     "Huarte / Uharte": 7562,
     "Irurtzun": 2316,
     "Larraga": 2087,
-    "Leitza": 3016",
+    "Leitza": 3016,
     "Lekunberri": 1689,
     "Lerín": 1789,
     "Lesaka": 2731,
