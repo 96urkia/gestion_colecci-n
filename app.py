@@ -1,23 +1,37 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import re
-import plotly.express as px
+import os
+import sqlite3
 
 # ==========================================
-# CONFIGURACIÓN DE PÁGINA Y ESTADO
+# CONFIGURACIÓN DE BASE DE DATOS (Extraída fuera de la función)
 # ==========================================
-st.set_page_config(
-    page_title="Analizador de Fondos de Biblioteca",
-    page_icon="📚",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+DB_PATH = "gestion_coleccion.db"
+DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=0" 
 
-if 'analizado' not in st.session_state:
-    st.session_state['analizado'] = False
-if 'resultado' not in st.session_state:
-    st.session_state['resultado'] = None
+@st.cache_resource
+def obtener_conexion_db():
+    # Si el archivo no está en el servidor (primera ejecución), lo descarga
+    if not os.path.exists(DB_PATH):
+        with st.spinner("Descargando base de datos de la colección (500MB)... Esto solo ocurre una vez."):
+            try:
+                # Si usas una URL real, descomenta la línea de abajo:
+                # urllib.request.urlretrieve(DB_URL, DB_PATH)
+                pass
+            except Exception as e:
+                st.error(f"Error al descargar la base de datos: {e}")
+                return None
+                
+    # Conexión segura para entornos web (check_same_thread=False es crucial para Streamlit)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    return conn
+
+# Inicializar la conexión
+conn = obtener_conexion_db()
+
+if conn:
+    st.success("Conexión activa a la base de datos de la colección.")
+else:
+    st.error("No se pudo establecer la conexión con la base de datos.")
+
 
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
@@ -62,42 +76,6 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     df_topo = pd.DataFrame(data).drop_duplicates(subset=['record_id'])
     if df_topo.empty:
         return None, 0
-
-
-    # Ruta donde se guardará el archivo dentro del servidor de Streamlit
-DB_PATH = "gestion_coleccion.db"
-
-# URL de tu almacenamiento externo (debe ser un enlace de descarga directa)
-# Ejemplo: https://www.dropbox.com/s/raw/.../tu_archivo.db
-DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=0" 
-
-@st.cache_resource
-def obtener_conexion_db():
-    # Si el archivo no está en el servidor (primera ejecución), lo descarga
-    if not os.path.exists(DB_PATH):
-        with st.spinner("Descargando base de datos de la colección (500MB)... Esto solo ocurre una vez."):
-            try:
-                # Si usas una URL real, descomenta la línea de abajo:
-                # urllib.request.urlretrieve(DB_URL, DB_PATH)
-                
-                # NOTA DE DESARROLLO LOCAL: Si estás en local, simplemente 
-                # coloca tu archivo .db en la misma carpeta del script con el nombre 'gestion_coleccion.db'
-                pass
-            except Exception as e:
-                st.error(f"Error al descargar la base de datos: {e}")
-                return None
-                
-    # Conexión segura para entornos web (check_same_thread=False es crucial para Streamlit)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    return conn
-
-# Inicializar la conexión
-conn = obtener_conexion_db()
-
-if conn:
-    st.success("Conexión activa a la base de datos de la colección.")
-else:
-    st.error("No se pudo establecer la conexión con la base de datos.")
 
     # 2. Catálogo y extracción de años
     cat_text = catalogo_bytes.decode('utf-8', errors='replace')
