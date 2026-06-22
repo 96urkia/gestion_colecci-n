@@ -149,7 +149,7 @@ BIBLIOTECAS = {
     "Lekunberri": 1689,
     "Lerín": 1789,
     "Lesaka": 2731,
-    "Lodosa", 4894,
+    "Lodosa": 4894,
     "Los Arcos": 1151,
     "Lumbier": 1326,
     "Mañeru": 445,
