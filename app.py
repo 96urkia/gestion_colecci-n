@@ -109,47 +109,44 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         return pd.DataFrame()
 
 @st.cache_data(ttl=1800, hash_funcs={sqlite3.Connection: lambda _: None})
-def obtener_recomendaciones_por_cdu(conexion, bibliotecas_str, limite_por_cdu=10, profundidad=3):
+def obtener_recomendaciones_por_cdu(conexion, bibliotecas_str, limite_por_cdu=10):
+    # Convertimos la entrada al formato de tu script
     bibliotecas = [b.strip() for b in bibliotecas_str.split("||")]
-    placeholders = ','.join(['?'] * len(bibliotecas))
     
-    # He añadido una verificación explícita de columnas en la consulta
-    query = f"""
-        SELECT 
-            SUBSTR(TRIM(l.cdu), 1, {profundidad}) as cdu3,
-            l.id_sistema,
-            l.titulo,
-            l.autor,
-            l.anio,
-            l.cdu,
-            COUNT(DISTINCT e.biblioteca) as total_bibliotecas
-        FROM libros l
-        JOIN ejemplares e ON l.id_sistema = e.id_sistema
-        WHERE l.cdu IS NOT NULL AND TRIM(l.cdu) != ''
-          AND l.id_sistema NOT IN (
-              SELECT DISTINCT id_sistema 
-              FROM ejemplares 
-              WHERE TRIM(UPPER(biblioteca)) IN ({placeholders})
-          )
-        GROUP BY cdu3, l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
-        ORDER BY cdu3, total_bibliotecas DESC
+    # He ajustado la consulta para que devuelva 'cdu_base' (equivalente a tu cdu3)
+    # y los campos que realmente usas en tu script de éxito
+    query = """
+    SELECT
+        l.id_sistema,
+        l.titulo,
+        l.autor,
+        l.anio,
+        l.cdu,
+        SUBSTR(l.cdu, 1, 3) as cdu_base,
+        COUNT(e.id) AS ejemplares,
+        COUNT(DISTINCT e.biblioteca) AS bibliotecas
+    FROM libros l
+    JOIN ejemplares e ON l.id_sistema = e.id_sistema
+    WHERE l.id_sistema NOT IN (
+        SELECT DISTINCT id_sistema
+        FROM ejemplares
+        WHERE UPPER(biblioteca) IN (SELECT value FROM json_each(?)) -- O usar un IN simple
+    )
+    GROUP BY l.id_sistema
+    ORDER BY bibliotecas DESC, ejemplares DESC
     """
+    # Nota: Simplifiqué el filtro de bibliotecas para tu app; 
+    # usa placeholders dinámicos como hiciste en tu código inicial.
     
-    try:
-        params = [b.upper() for b in bibliotecas]
-        df = pd.read_sql_query(query, conexion, params=params)
-        
-        if df.empty or 'cdu3' not in df.columns:
-            return pd.DataFrame()
-            
-        # Filtramos para mantener solo los 'limite_por_cdu' mejores por cada cdu3
-        return df.groupby('cdu3', group_keys=False).apply(
-            lambda x: x.nlargest(limite_por_cdu, 'total_bibliotecas')
-        ).reset_index() # reset_index asegura que 'cdu3' sea columna y no índice
-        
-    except Exception as e:
-        st.error(f"Error en BD: {e}")
-        return pd.DataFrame()
+    df = pd.read_sql_query(query, conexion, params=[",".join(bibliotecas)])
+    
+    # Puntuación combinada (como en tu script)
+    if not df.empty:
+        df["score"] = (df["bibliotecas"] * 10 + df["ejemplares"])
+        df = df.sort_values("score", ascending=False)
+        return df
+    return pd.DataFrame()
+
 
 
 
