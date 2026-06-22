@@ -1,54 +1,57 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import re
-import plotly.express as px
 import os
 import sqlite3
+import urllib.request  # <--- Crucial para activar la descarga
 
 # ==========================================
-# CONFIGURACIÓN DE PÁGINA Y ESTADO
-# ==========================================
-st.set_page_config(
-    page_title="Analizador de Fondos de Biblioteca",
-    page_icon="📚",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-if 'analizado' not in st.session_state:
-    st.session_state['analizado'] = False
-if 'resultado' not in st.session_state:
-    st.session_state['resultado'] = None
-
-# ==========================================
-# CONFIGURACIÓN DE BASE DE DATOS
+# CONFIGURACIÓN DE BASE DE DATOS (CORREGIDA)
 # ==========================================
 DB_PATH = "gestion_coleccion.db"
-DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=0" 
+# Cambiado el final de dl=0 a dl=1 para descarga directa y real
+DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=1" 
 
 @st.cache_resource
 def obtener_conexion_db():
-    # Si el archivo no está en el servidor (primera ejecución), lo descarga
+    # Comprobamos si no existe O si existe pero se creó vacío (0 bytes o corrupto HTML)
+    debe_descargar = False
     if not os.path.exists(DB_PATH):
-        with st.spinner("Descargando base de datos de la colección (500MB)... Esto solo ocurre una vez."):
+        debe_descargar = True
+    elif os.path.getsize(DB_PATH) < 10000:  # Si mide menos de 10KB es un archivo falso/vacío
+        os.remove(DB_PATH)  # Lo borramos para poder bajar el real
+        debe_descargar = True
+
+    if debe_descargar:
+        with st.spinner("Descargando base de datos de la colección (500MB)... Esto puede tardar un minuto la primera vez."):
             try:
-                # Si usas una URL real, descomenta la línea de abajo:
-                # urllib.request.urlretrieve(DB_URL, DB_PATH)
-                pass
+                # Descarga real del archivo desde Dropbox
+                urllib.request.urlretrieve(DB_URL, DB_PATH)
+                st.toast("¡Base de datos descargada con éxito!", icon="📥")
             except Exception as e:
-                st.error(f"Error al descargar la base de datos: {e}")
+                st.error(f"Error crítico al descargar la base de datos desde Dropbox: {e}")
                 return None
                 
-    # Conexión segura para entornos web (check_same_thread=False es crucial para Streamlit)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    return conn
+    # Conexión segura
+    try:
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        return conn
+    except Exception as e:
+        st.error(f"Error al conectar con el archivo SQLite: {e}")
+        return None
 
 # Inicializar la conexión
 conn = obtener_conexion_db()
 
 if conn:
-    st.success("Conexión activa a la base de datos de la colección.")
+    # Bloque opcional de depuración para ver qué tablas existen realmente dentro de tu DB
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tablas = [fila[0] for fila in cursor.fetchall()]
+        if tablas:
+            st.success(f"Conexión activa. Tablas detectadas en la base de datos: {', '.join(tablas)}")
+        else:
+            st.warning("Conexión establecida, pero la base de datos sigue estando vacía (sin tablas).")
+    except Exception as e:
+        st.error(f"Error al verificar las tablas: {e}")
 else:
     st.error("No se pudo establecer la conexión con la base de datos.")
 
