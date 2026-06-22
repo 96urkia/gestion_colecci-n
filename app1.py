@@ -1,4 +1,4 @@
-import streamlit as st
+   import streamlit as st
 import pandas as pd
 import numpy as np
 import re
@@ -354,94 +354,178 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         st.markdown("### 🧒 Colección Infantil / Juvenil")
         st.dataframe(tabla_infantil.sort_values(by='Nº Volúmenes', ascending=False), use_container_width=True, hide_index=True)
 
-   # --- PESTAÑA 3: ANÁLISIS EXHAUSTIVO POR CDU (JERARQUÍA FILTRADA Y ESTRICTA) ---
+    # --- PESTAÑA 3: ANÁLISIS POR SECCIONES (JERARQUÍA DINÁMICA CON BUSCADOR EXHAUSTIVO) ---
     with tab3:
-        st.subheader("🔎 Análisis exhaustivo por CDU")
-        st.markdown("Explora la estructura de la colección. El árbol se despliega nivel a nivel.")
-
+        st.subheader("🔎 Análisis por secciones (Jerarquía)")
+        
+        # 1. FUNCIONES INTERNAS DE LA PESTAÑA (Definidas al inicio para reutilizarlas en la búsqueda)
         def convertir_a_csv(df):
-            cols_export = ['record_id', 'signatura_real', 'titulo', 'year', 'prestamos', 'prestado']
-            df_export = df[cols_export].copy()
-            df_export.columns = ['Nº Registro', 'CDU / Signatura', 'Título', 'Año', 'Nº Préstamos', '¿Prestado?']
+            """Genera un CSV adaptado a los campos exactos solicitados por el usuario."""
+            df_export = pd.DataFrame()
+            df_export['codigo de barras'] = df['record_id'] if 'record_id' in df.columns else np.nan
+            df_export['cdu'] = df['signatura_real'] if 'signatura_real' in df.columns else ""
+            df_export['titulo'] = df['titulo'] if 'titulo' in df.columns else ""
+            df_export['autor'] = "No detectado"
+            
+            if 'prestado' in df.columns:
+                df_export['prestamo'] = df['prestado'].map({True: 'yes', False: 'not'})
+            else:
+                df_export['prestamo'] = 'not'
+                
+            df_export['año'] = df['year'] if 'year' in df.columns else np.nan
             return df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
-
+        
+        def mostrar_tabla_promedios(df_sub, total_coleccion):
+            """Calcula y muestra la tabla resumida con las métricas distribuidas en columnas."""
+            avg_year = int(df_sub['year'].mean()) if not df_sub['year'].dropna().empty else "N/A"
+            pct_uso = (df_sub['prestado'].sum() / len(df_sub) * 100) if len(df_sub) > 0 else 0
+            pct_col = (len(df_sub) / total_coleccion * 100) if total_coleccion > 0 else 0
+            
+            # Formatear la estructura en columnas (Fila única de datos)
+            df_promedios = pd.DataFrame([{
+                "Volúmenes": len(df_sub),
+                "Año Promedio": avg_year,
+                "% Uso (Préstamos)": f"{pct_uso:.2f}%",
+                "% sobre Total Colección": f"{pct_col:.2f}%"
+            }])
+            st.dataframe(df_promedios, use_container_width=True, hide_index=True)
+        
         def generar_seccion_resumen(df_sub, nombre_nivel, ruta_completa):
-            vols = len(df_sub)
-            if vols == 0: return
+            if df_sub.empty: return
             
-            pct_coll = (vols / total_docs * 100)
-            edad_m = df_sub['year'].mean()
-            pct_prest = (df_sub['prestado'].sum() / vols * 100)
-            
-            df_met = pd.DataFrame({
-                "Nº Volúmenes": [f"{vols:,}"],
-                "% Colección": [f"{pct_coll:.1f}%"],
-                "Edad Media": [f"{int(edad_m)}" if not np.isnan(edad_m) else "N/A"],
-                "% Préstamos": [f"{pct_prest:.1f}%"]
-            })
-            st.table(df_met)
-            
-            # Hash único basado en el contenido del dataframe para evitar duplicidad de botones
             unique_hash = hash(tuple(df_sub.index.tolist()))
             st.download_button(
-                label=f"📥 Descargar lista: {nombre_nivel}",
+                label=f"📥 Descargar CSV: {nombre_nivel}",
                 data=convertir_a_csv(df_sub),
                 file_name=f"export_{str(nombre_nivel).replace(' ', '_')[:20]}.csv",
                 mime="text/csv",
                 key=f"dl_{ruta_completa}_{unique_hash}"
             )
-
-        def render_niveles(df_actual, prefijo_actual, ruta_path):
-            def obtener_siguientes_nodos(df, prefijo):
-                nodos_hijos = set()
-                # Extraemos el prefijo de la signatura para identificar el siguiente nivel
-                for sig in df['signatura_real'].unique():
-                    sig = str(sig)
-                    if sig.startswith(prefijo):
-                        # Limpiamos prefijo y delimitadores comunes
-                        resto = sig[len(prefijo):].lstrip('. ()')
-                        
-                        # Filtro de autor (ignora 3 letras)
-                        if re.match(r'^[A-Za-z]{3}$', resto): continue
-                        
-                        # Captura el primer bloque (número o paréntesis)
-                        match = re.match(r'^([0-9]+|\([0-9]+\))', resto)
-                        if match:
-                            bloque = match.group(1)
-                            if re.match(r'^[A-Za-z]{3}$', bloque): continue
-                            nodos_hijos.add(bloque)
-                return sorted(list(nodos_hijos))
-
-            nodos = obtener_siguientes_nodos(df_actual, prefijo_actual)
-            
-            for nodo in nodos:
-                # Patrón para asegurar que el nodo es un segmento independiente
-                # Buscamos el nodo como bloque aislado
-                patron = f"{re.escape(prefijo_actual.strip())}\\.?\\s?\\(?{re.escape(nodo.replace('(', '').replace(')', ''))}".strip()
-                df_hijo = df_actual[df_actual['signatura_real'].str.contains(patron, regex=True, na=False)]
+        
+        def obtener_prefijo_dinamico(sig, seccion, nivel):
+            """
+            Extrae el prefijo de clasificación aislando las secciones fijas de edad (I0-I3, JN)
+            y permitiendo el desglose jerárquico en las CDU de conocimientos.
+            """
+            sig = str(sig).strip().upper()
+            if not sig or sig == "NAN": 
+                return "Sin clasificar"
+        
+            if seccion == "Adultos":
+                if sig[0].isdigit():
+                    match = re.match(r'^([0-9]+)', sig)
+                    if match:
+                        num = match.group(1)
+                        return num[:min(nivel, len(num))]
+                if sig.startswith('('):
+                    match = re.match(r'^(\([0-9]+\))', sig)
+                    if match: return match.group(1)
+                match = re.match(r'^([A-Za-z]+)', sig)
+                if match: return match.group(1)
+                return sig[:nivel]
                 
-                if len(df_hijo) > 0:
-                    nueva_ruta = f"{ruta_path}_{nodo.replace('(', '').replace(')', '')}"
+            else: 
+                match_edad = re.match(r'^(I[0-3]|JN|IJ|J)(?:\s|$)', sig)
+                if match_edad:
+                    return match_edad.group(1)
+                
+                match_conoc = re.match(r'^I\s+([0-9\(A-Z].*)', sig)
+                if match_conoc:
+                    cdu_interna = match_conoc.group(1).strip()
+                    if cdu_interna and cdu_interna[0].isdigit():
+                        match = re.match(r'^([0-9]+)', cdu_interna)
+                        if match:
+                            num = match.group(1)
+                            return f"I {num[:min(nivel, len(num))]}"
+                    if cdu_interna.startswith('('):
+                        match = re.match(r'^(\([0-9]+\))', cdu_interna)
+                        if match: return f"I {match.group(1)}"
+                    match = re.match(r'^([A-Za-z]+)', cdu_interna)
+                    if match: return f"I {match.group(1)}"
+                    return f"I {cdu_interna[:nivel]}"
+                
+                sig_limpia = re.sub(r'^(I\s+|I/|IJ|JN|I-?)', '', sig).strip()
+                if sig_limpia and sig_limpia[0].isdigit():
+                    match = re.match(r'^([0-9]+)', sig_limpia)
+                    if match:
+                        num = match.group(1)
+                        return num[:min(nivel, len(num))]
+                return sig[:nivel]
+        
+        # 2. BUSCADOR EXHAUSTIVO SOBRE EL TEXTO ORIGINAL DE LA SIGNATURA
+        cdu_busqueda = st.text_input(
+            "🔍 Buscador exhaustivo por prefijo CDU / Signatura (ej. 94(460.14), 82-3):",
+            value=""
+        ).strip().upper()
+        
+        df_jerarquia = df_completo.copy()
+        
+        # Aplicamos el filtro sobre el texto completo antes de estructurar las ramas
+        if cdu_busqueda:
+            df_jerarquia = df_jerarquia[
+                df_jerarquia['signatura_real'].astype(str).str.strip().str.upper().str.startswith(cdu_busqueda)
+            ]
+            
+            if not df_jerarquia.empty:
+                st.markdown(f"### 📊 Indicadores del fondo filtrado por: `{cdu_busqueda}`")
+                mostrar_tabla_promedios(df_jerarquia, total_docs)
+                generar_seccion_resumen(df_jerarquia, f"Resultado {cdu_busqueda}", f"search_tab_{cdu_busqueda}")
+                st.markdown("#### 🌳 Ubicación en el esquema jerárquico:")
+            else:
+                st.warning(f"⚠️ No se encontraron volúmenes que comiencen exactamente con el prefijo '{cdu_busqueda}' en el archivo.")
+        
+        # 3. RENDERIZADO JERÁRQUICO
+        if not df_jerarquia.empty:
+            df_jerarquia['seccion'] = df_jerarquia['signatura_real'].apply(
+                lambda x: "Infantil / Juvenil" if re.match(r'^(I|IJ|JN)', str(x).upper()) else "Adultos"
+            )
+            
+            tabs = st.tabs(["👥 Adultos", "🧸 Infantil / Juvenil"])
+            for i, sec in enumerate(["Adultos", "Infantil / Juvenil"]):
+                with tabs[i]:
+                    df_sec = df_jerarquia[df_jerarquia['seccion'] == sec].copy()
                     
-                    with st.expander(f"📁 {nodo} ({len(df_hijo)} volúmenes)"):
-                        generar_seccion_resumen(df_hijo, nodo, nueva_ruta)
+                    if df_sec.empty:
+                        st.info(f"No hay registros en la sección {sec} para el criterio actual.")
+                        continue
+        
+                    # --- NIVEL 1 ---
+                    df_sec['Nivel_1'] = df_sec['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 1))
+                    nodos_l1 = sorted(df_sec['Nivel_1'].unique())
+                    
+                    for n1 in nodos_l1:
+                        # AQUÍ ESTÁ LA CORRECCIÓN: Una única línea limpia asignando el DataFrame
+                        df_n1 = df_sec[df_sec['Nivel_1'] == n1].copy()
                         
-                        # Comprobamos si tiene subdivisiones más profundas
-                        hijos_del_hijo = obtener_siguientes_nodos(df_hijo, f"{prefijo_actual} {nodo}".strip())
+                        # --- NIVEL 2 ---
+                        df_n1['Nivel_2'] = df_n1['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 2))
+                        nodos_l2 = sorted(df_n1['Nivel_2'].unique())
                         
-                        if hijos_del_hijo:
-                            render_niveles(df_hijo, f"{prefijo_actual} {nodo}".strip(), nueva_ruta)
+                        if len(nodos_l2) == 1 and nodos_l2[0] == n1:
+                            with st.expander(f"📚 {n1}"):
+                                generar_seccion_resumen(df_n1, n1, f"{sec}_L1_{n1}")
+                                mostrar_tabla_promedios(df_n1, total_docs)
+                        
                         else:
-                            st.dataframe(df_hijo[['signatura_real', 'titulo', 'year']], use_container_width=True, hide_index=True)
-
-        # Inicio del árbol de categorías
-        for cat in sorted(df_completo['categoria'].unique()):
-            df_cat = df_completo[df_completo['categoria'] == cat]
-            if len(df_cat) > 0:
-                with st.expander(f"📚 {cat} ({len(df_cat)} volúmenes)"):
-                    generar_seccion_resumen(df_cat, cat, cat)
-                    render_niveles(df_cat, "", cat)
-
+                            with st.expander(f"🗄️ Nivel Principal: {n1} ({len(df_n1)} volúmenes)"):
+                                for n2 in nodos_l2:
+                                    df_n2 = df_n1[df_n1['Nivel_2'] == n2].copy()
+                                    
+                                    # --- NIVEL 3 ---
+                                    df_n2['Nivel_3'] = df_n2['signatura_real'].apply(lambda x: obtener_prefijo_dinamico(x, sec, 3))
+                                    nodos_l3 = sorted(df_n2['Nivel_3'].unique())
+                                    
+                                    with st.expander(f"📁 Subnivel: {n2}"):
+                                        generar_seccion_resumen(df_n2, n2, f"{sec}_L2_{n2}")
+                                        
+                                        if len(nodos_l3) == 1 and nodos_l3[0] == n2:
+                                            mostrar_tabla_promedios(df_n2, total_docs)
+                                        else:
+                                            for n3 in nodos_l3:
+                                                df_n3 = df_n2[df_n2['Nivel_3'] == n3]
+                                                st.markdown(f"**📖 Específico: {n3}**")
+                                                mostrar_tabla_promedios(df_n3, total_docs)
+                            st.divider()
                 
     # --- PESTAÑA 4: EXPLORADOR Y BUSCADOR DE TÍTULOS ---
     with tab4:
