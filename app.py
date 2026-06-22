@@ -108,14 +108,9 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=1800)
-def obtener_recomendaciones_por_cdu(conexion, bibliotecas_tuple, limite_por_cdu=10, profundidad=3):
-    """
-    Recomienda libros por CDU (profundidad 3).
-    - bibliotecas_tuple: debe ser una TUPLA (no lista)
-    """
-    # Convertir tupla de vuelta a lista para la query
-    bibliotecas = list(bibliotecas_tuple)
+@st.cache_data(ttl=1800, hash_funcs={list: lambda x: tuple(sorted(x)) if isinstance(x, list) else x})
+def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, profundidad=3):
+    bibliotecas = list(bibliotecas) if isinstance(bibliotecas, tuple) else [bibliotecas] if isinstance(bibliotecas, str) else bibliotecas
     
     if not bibliotecas:
         return pd.DataFrame()
@@ -134,8 +129,7 @@ def obtener_recomendaciones_por_cdu(conexion, bibliotecas_tuple, limite_por_cdu=
                 COUNT(DISTINCT e.biblioteca) as total_bibliotecas
             FROM libros l
             JOIN ejemplares e ON l.id_sistema = e.id_sistema
-            WHERE l.cdu IS NOT NULL 
-              AND TRIM(l.cdu) != ''
+            WHERE l.cdu IS NOT NULL AND TRIM(l.cdu) != ''
             GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
         )
         SELECT 
@@ -156,13 +150,12 @@ def obtener_recomendaciones_por_cdu(conexion, bibliotecas_tuple, limite_por_cdu=
     """
     
     try:
-        params = [b.strip() for b in bibliotecas] 
+        params = [str(b).strip() for b in bibliotecas]
         df = pd.read_sql_query(query, conexion, params=params)
         
         if df.empty:
             return pd.DataFrame()
             
-        # Limitar por CDU
         return df.groupby('cdu3', group_keys=False).apply(
             lambda x: x.nlargest(limite_por_cdu, 'total_bibliotecas')
         ).reset_index(drop=True)
@@ -170,6 +163,7 @@ def obtener_recomendaciones_por_cdu(conexion, bibliotecas_tuple, limite_por_cdu=
     except Exception as e:
         st.error(f"Error en recomendaciones por CDU: {e}")
         return pd.DataFrame()
+
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
 # ==========================================
