@@ -369,9 +369,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
             tabla_macro = pd.DataFrame({
                 "Sección": ["Adultos", "Infantil/Juvenil", "Audiovisuales"],
-                "Pauta IFLA": ["65.0%", "20.0%", "15.0%"],
-                "Tu Biblioteca": [f"{p_adultos:.1f}%", f"{p_infantil:.1f}%", f"{p_audio:.1f}%"],
-                "Desviación": [f"{p_adultos-65:.1f}%", f"{p_infantil-20:.1f}%", f"{p_audio-15:.1f}%"]
+                "Distribución": [f"{p_adultos:.1f}%", f"{p_infantil:.1f}%", f"{p_audio:.1f}%"]
+                
             })
             st.dataframe(tabla_macro, use_container_width=True, hide_index=True)
 
