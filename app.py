@@ -613,7 +613,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 else:
                     st.warning("El archivo de base de datos no contiene tablas válidas.")
                     
-        except Exception as e:
-            st.error(f"Error al consultar la estructura de la base de datos: {e}")
-    else:
-        st.warning("⚠️ Requiere conexión con la base de datos de la colección.")
+            except Exception as e:
+                st.error(f"Error al consultar la estructura de la base de datos: {e}")
+        else:
+            st.warning("⚠️ Requiere conexión con la base de datos de la colección.")
