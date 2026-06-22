@@ -703,6 +703,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         with st.spinner("Buscando recomendaciones por CDU..."):
             df_recom = obtener_recomendaciones_por_cdu(
                 conn, 
+                bib_tuple,
                 bibliotecas_seleccionadas if 'bibliotecas_seleccionadas' in locals() else biblioteca_seleccionada,
                 limite_por_cdu=limite_cdu
             )
