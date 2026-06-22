@@ -96,30 +96,30 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
 # ==========================================
 BIBLIOTECAS = {
-    "Ablitas"; 2610,
-    "Aibar / Oibar"; 769,
-    "Allo"; 988,
-    "Altsasu / Alsasua"; 7590,
-    "Andosilla"; 2882,
-    "Ansoáin / Antsoain", 10608,
-    "Añorbe"; 628,
-    "Aoiz, Agoitz"; 2970,
-    "Aranguren"; 12517,
-    "Arbizu"; 1126,
-    "Arguedas"; 2313,
-    "Arroniz"; 1035,
-    "Artajona"; 1772,
-    "Artica / Artika"; 4848,
-    "Aurizberri / Espinal"; 2627,
-    "Ayegui, Aiegi"; 2531,
-    "Azagra"; 3749,
-    "Barañain"; 19575,
-    "Baztan"; 7831,
-    "Bera"; 3792,
-    "Beriáin"; 4129,
-    "Berriozar"; 10919,
+    "Ablitas": 2610,
+    "Aibar / Oibar": 769,
+    "Allo": 988,
+    "Altsasu / Alsasua": 7590,
+    "Andosilla": 2882,
+    "Ansoáin / Antsoain": 10608,
+    "Añorbe": 628,
+    "Aoiz, Agoitz": 2970,
+    "Aranguren": 12517,
+    "Arbizu": 1126,
+    "Arguedas": 2313,
+    "Arroniz": 1035,
+    "Artajona": 1772,
+    "Artica / Artika": 4848,
+    "Aurizberri / Espinal": 2627,
+    "Ayegui, Aiegi": 2531,
+    "Azagra": 3749,
+    "Barañain": 19575,
+    "Baztan": 7831,
+    "Bera": 3792,
+    "Beriáin": 4129,
+    "Berriozar": 10919,
     
-    "Monteagudo"; 1200
+    "Monteagudo": 1200
     
     
 }
