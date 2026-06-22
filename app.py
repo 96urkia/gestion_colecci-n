@@ -108,7 +108,64 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
-
+@st.cache_data(ttl=1800)
+def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, profundidad=3):
+    """
+    Recomienda libros por CDU (profundidad 3) que faltan en tu biblioteca.
+    """
+    if isinstance(bibliotecas, str):
+        bibliotecas = [bibliotecas]
+    
+    placeholders = ','.join(['?'] * len(bibliotecas))
+    
+    query = f"""
+        WITH cdu_prefix AS (
+            SELECT 
+                l.id_sistema,
+                l.titulo,
+                l.autor,
+                l.anio,
+                l.cdu,
+                SUBSTR(TRIM(l.cdu), 1, {profundidad}) as cdu3,
+                COUNT(DISTINCT e.biblioteca) as total_bibliotecas
+            FROM libros l
+            JOIN ejemplares e ON l.id_sistema = e.id_sistema
+            WHERE l.cdu IS NOT NULL 
+              AND TRIM(l.cdu) != ''
+            GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
+        )
+        SELECT 
+            cdu3,
+            id_sistema,
+            titulo,
+            autor,
+            anio,
+            cdu,
+            total_bibliotecas
+        FROM cdu_prefix
+        WHERE id_sistema NOT IN (
+            SELECT DISTINCT id_sistema 
+            FROM ejemplares 
+            WHERE TRIM(UPPER(biblioteca)) IN ({placeholders})
+        )
+        ORDER BY cdu3, total_bibliotecas DESC
+    """
+    
+    try:
+        params = [b.strip() for b in bibliotecas] 
+        df = pd.read_sql_query(query, conexion, params=params)
+        
+        if df.empty:
+            return pd.DataFrame()
+            
+        # Agrupar por CDU3
+        return df.groupby('cdu3', group_keys=False).apply(
+            lambda x: x.nlargest(limite_por_cdu, 'total_bibliotecas')
+        ).reset_index(drop=True)
+        
+    except Exception as e:
+        st.error(f"Error en recomendaciones por CDU: {e}")
+        return pd.DataFrame()
 
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
@@ -322,11 +379,13 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Distribución y Uso", 
         "📚 Análisis por Categorías", 
         "🔎 Análisis exhaustivo por CDU", 
-        "📋 Explorador de Colección"
+        "📋 Explorador de Colección",
+        "🎯 Recomendaciones por CDU" # ← Nueva pestaña
+    ])"
     ])
 
     with tab1:
@@ -621,3 +680,56 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 st.info("No se pudieron cargar recomendaciones o tu biblioteca ya tiene todo el catálogo.")
         else:
             st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
+
+    with tab5:
+        st.subheader("🎯 Recomendaciones por CDU (Profundidad 3)")
+        st.caption("Libros más presentes en Navarra que te faltan, agrupados por CDU")
+        
+        col_r1, col_r2 = st.columns([3,1])
+        with col_r1:
+            limite_cdu = st.slider("Número de recomendaciones por CDU", 5, 20, 10)
+        
+        with col_r2:
+            if st.button("🔄 Actualizar Recomendaciones CDU", type="primary"):
+                st.session_state['recom_cdu'] = None
+                st.rerun()
+        
+        # Obtener recomendaciones
+        if 'recom_cdu' not in st.session_state:
+            st.session_state['recom_cdu'] = None
+            
+        with st.spinner("Buscando recomendaciones por CDU..."):
+            df_recom = obtener_recomendaciones_por_cdu(
+                conn, 
+                bibliotecas_seleccionadas if 'bibliotecas_seleccionadas' in locals() else biblioteca_seleccionada,
+                limite_por_cdu=limite_cdu
+            )
+        
+        if df_recom.empty:
+            st.warning("No se encontraron recomendaciones por CDU. Tu colección puede ser muy completa en la mayoría de áreas.")
+        else:
+            # Agrupar por CDU3 para mostrar en expanders
+            for cdu3, group in df_recom.groupby('cdu3'):
+                with st.expander(f"📘 **{cdu3}** — {len(group)} recomendaciones populares", expanded=False):
+                    st.caption(f"Libros más presentes en Navarra con CDU que empieza por **{cdu3}**")
+                    
+                    # Mostrar tabla bonita
+                    display_cols = ['titulo', 'autor', 'anio', 'cdu', 'total_bibliotecas']
+                    group_display = group[display_cols].copy()
+                    group_display.columns = ['Título', 'Autor', 'Año', 'CDU', 'Bibliotecas en Navarra']
+                    
+                    st.dataframe(
+                        group_display,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # Botón para exportar esta sección
+                    csv = group_display.to_csv(index=False, sep=';')
+                    st.download_button(
+                        label=f"⬇️ Descargar {cdu3}",
+                        data=csv,
+                        file_name=f"recomendaciones_{cdu3}.csv",
+                        mime="text/csv",
+                        key=f"dl_{cdu3}"
+                    )
