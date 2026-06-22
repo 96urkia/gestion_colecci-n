@@ -370,24 +370,78 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 fig_hist = px.histogram(df_completo, x='year', nbins=25, labels={'year': 'Año de Publicación'}, color_discrete_sequence=['#1E3A8A'])
                 st.plotly_chart(fig_hist, use_container_width=True)
 
-        # B) ANÁLISIS POR CDU
+                # B) ANÁLISIS POR CDU
         with subtab_cdu:
             st.subheader("🗂️ Concentración y Rendimiento por Secciones")
-            
+           
+            # 1. Generar métricas base globales
             df_metrics = df_completo.groupby('categoria').agg(
                 Volúmenes=('record_id', 'count'),
                 Prestados=('prestado', 'sum'),
                 Año_Medio=('year', 'mean')
             ).reset_index()
-            
+           
             df_metrics['% Uso (Rotación)'] = (df_metrics['Prestados'] / df_metrics['Volúmenes'] * 100).round(1)
             df_metrics['Año Medio Edición'] = df_metrics['Año_Medio'].fillna(0).astype(int)
-            df_metrics = df_metrics.sort_values(by='Volúmenes', ascending=False)
+           
+            # 2. Segmentar de forma limpia entre Infantil/Juvenil y Adultos
+            # Identificamos como infantil cualquier categoría que contenga las palabras clave del tejuelo infantil
+            df_metrics['es_infantil'] = df_metrics['categoria'].apply(
+                lambda x: any(k in str(x).lower() for k in ["infantil", "juvenil", "jn", "ic", "ip", "it"])
+            )
             
-            fig_bar = px.bar(df_metrics, x='categoria', y='Volúmenes', color='% Uso (Rotación)', title="Volumen vs Rotación por Sección")
-            st.plotly_chart(fig_bar, use_container_width=True)
+            df_adultos = df_metrics[~df_metrics['es_infantil']].sort_values(by='Volúmenes', ascending=False)
+            df_infantil = df_metrics[df_metrics['es_infantil']].sort_values(by='Volúmenes', ascending=False)
+           
+            # ==========================================
+            # 📊 GRÁFICO Y TABLA - SECCIÓN ADULTOS
+            # ==========================================
+            st.markdown("### 👨‍💼 Análisis Sección Adultos")
+            if not df_adultos.empty:
+                fig_bar_adultos = px.bar(
+                    df_adultos, 
+                    x='categoria', 
+                    y='Volúmenes', 
+                    color='% Uso (Rotación)', 
+                    title="Adultos: Volumen vs Rotación por Categoría",
+                    color_continuous_scale="Blues",
+                    labels={'categoria': 'Categoría / CDU', 'Volúmenes': 'Nº Volúmenes'}
+                )
+                st.plotly_chart(fig_bar_adultos, use_container_width=True)
+               
+                st.dataframe(
+                    df_adultos[['categoria', 'Volúmenes', '% Uso (Rotación)', 'Año Medio Edición']], 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+            else:
+                st.info("ℹ️ No hay datos suficientes para generar el análisis de Adultos.")
+           
+            st.markdown("---") # Separador visual amplio
             
-            st.dataframe(df_metrics[['categoria', 'Volúmenes', '% Uso (Rotación)', 'Año Medio Edición']], use_container_width=True, hide_index=True)
+            # ==========================================
+            # 📊 GRÁFICO Y TABLA - SECCIÓN INFANTIL
+            # ==========================================
+            st.markdown("### 👶 Análisis Sección Infantil / Juvenil")
+            if not df_infantil.empty:
+                fig_bar_infantil = px.bar(
+                    df_infantil, 
+                    x='categoria', 
+                    y='Volúmenes', 
+                    color='% Uso (Rotación)', 
+                    title="Infantil/Juvenil: Volumen vs Rotación por Categoría",
+                    color_continuous_scale="Purples", # Cambiamos de color para diferenciar secciones al golpe de vista
+                    labels={'categoria': 'Categoría / Tejuelo', 'Volúmenes': 'Nº Volúmenes'}
+                )
+                st.plotly_chart(fig_bar_infantil, use_container_width=True)
+               
+                st.dataframe(
+                    df_infantil[['categoria', 'Volúmenes', '% Uso (Rotación)', 'Año Medio Edición']], 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+            else:
+                st.info("ℹ️ No hay datos suficientes para generar el análisis Infantil.")
 
         # C) ANÁLISIS PROFUNDO POR SIGNATURA
         with subtab_signatura:
