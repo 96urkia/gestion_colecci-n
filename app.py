@@ -693,33 +693,43 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         
         with col_r2:
             if st.button("🔄 Actualizar Recomendaciones CDU", type="primary"):
-                st.session_state['recom_cdu'] = None
+                if 'recom_cdu' in st.session_state:
+                    del st.session_state['recom_cdu']
                 st.rerun()
         
-        # Obtener recomendaciones
-        if 'recom_cdu' not in st.session_state:
-            st.session_state['recom_cdu'] = None
-            
         with st.spinner("Buscando recomendaciones por CDU..."):
+            # === CORRECCIÓN DEL ERROR ===
+            # Convertimos a tupla para que @st.cache_data funcione
+            if 'bibliotecas_seleccionadas' in locals() and bibliotecas_seleccionadas:
+                bib_input = tuple(sorted(bibliotecas_seleccionadas))
+            else:
+                bib_input = tuple([biblioteca_seleccionada]) if 'biblioteca_seleccionada' in locals() else ("Monteagudo",)
+            
             df_recom = obtener_recomendaciones_por_cdu(
                 conn, 
-                bib_tuple,
-                bibliotecas_seleccionadas if 'bibliotecas_seleccionadas' in locals() else biblioteca_seleccionada,
+                bib_input, # ← Tupla aquí
                 limite_por_cdu=limite_cdu
             )
         
         if df_recom.empty:
             st.warning("No se encontraron recomendaciones por CDU. Tu colección puede ser muy completa en la mayoría de áreas.")
         else:
+            st.success(f"✅ Se encontraron recomendaciones en **{df_recom['cdu3'].nunique()}** categorías CDU")
+            
             # Agrupar por CDU3 para mostrar en expanders
             for cdu3, group in df_recom.groupby('cdu3'):
                 with st.expander(f"📘 **{cdu3}** — {len(group)} recomendaciones populares", expanded=False):
                     st.caption(f"Libros más presentes en Navarra con CDU que empieza por **{cdu3}**")
                     
-                    # Mostrar tabla bonita
                     display_cols = ['titulo', 'autor', 'anio', 'cdu', 'total_bibliotecas']
                     group_display = group[display_cols].copy()
-                    group_display.columns = ['Título', 'Autor', 'Año', 'CDU', 'Bibliotecas en Navarra']
+                    group_display = group_display.rename(columns={
+                        'titulo': 'Título',
+                        'autor': 'Autor',
+                        'anio': 'Año',
+                        'cdu': 'CDU Completa',
+                        'total_bibliotecas': 'Bibliotecas en Navarra'
+                    })
                     
                     st.dataframe(
                         group_display,
@@ -727,10 +737,9 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         hide_index=True
                     )
                     
-                    # Botón para exportar esta sección
                     csv = group_display.to_csv(index=False, sep=';')
                     st.download_button(
-                        label=f"⬇️ Descargar {cdu3}",
+                        label=f"⬇️ Descargar recomendaciones {cdu3}",
                         data=csv,
                         file_name=f"recomendaciones_{cdu3}.csv",
                         mime="text/csv",
