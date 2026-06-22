@@ -109,12 +109,16 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         return pd.DataFrame()
 
 @st.cache_data(ttl=1800)
-def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, profundidad=3):
+def obtener_recomendaciones_por_cdu(conexion, bibliotecas_tuple, limite_por_cdu=10, profundidad=3):
     """
-    Recomienda libros por CDU (profundidad 3) que faltan en tu biblioteca.
+    Recomienda libros por CDU (profundidad 3).
+    - bibliotecas_tuple: debe ser una TUPLA (no lista)
     """
-    if isinstance(bibliotecas, str):
-        bibliotecas = [bibliotecas]
+    # Convertir tupla de vuelta a lista para la query
+    bibliotecas = list(bibliotecas_tuple)
+    
+    if not bibliotecas:
+        return pd.DataFrame()
     
     placeholders = ','.join(['?'] * len(bibliotecas))
     
@@ -158,7 +162,7 @@ def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, pr
         if df.empty:
             return pd.DataFrame()
             
-        # Agrupar por CDU3
+        # Limitar por CDU
         return df.groupby('cdu3', group_keys=False).apply(
             lambda x: x.nlargest(limite_por_cdu, 'total_bibliotecas')
         ).reset_index(drop=True)
@@ -166,7 +170,6 @@ def obtener_recomendaciones_por_cdu(conexion, bibliotecas, limite_por_cdu=10, pr
     except Exception as e:
         st.error(f"Error en recomendaciones por CDU: {e}")
         return pd.DataFrame()
-
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
 # ==========================================
