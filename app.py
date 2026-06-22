@@ -713,77 +713,135 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             st.warning("⚠️ Primero debes cargar y analizar los archivos topográficos en la pestaña de inicio.")
 
     with tab5:
+        st.subheader("🎯 Recomendaciones de adquisición por CDU (estructuradas)")
 
-        st.subheader("🎯 Recomendaciones de adquisición por CDU")
-    
         if conn is None:
-            st.error("No se pudo conectar con la base de datos.")
+            st.error("No hay conexión con la base de datos")
         else:
-    
-            limite_cdu = st.slider(
-                "Número de recomendaciones por CDU",
-                min_value=1,
-                max_value=50,
-                value=10
+            # Filtros interactivos en paralelo en la parte superior de la pestaña
+            col_filtros1, col_filtros2 = st.columns(2)
+            with col_filtros1:
+                limite_cdu = st.number_input(
+                    "Máximo de recomendaciones por CDU:",
+                    min_value=1,
+                    max_value=100,
+                    value=10,
+                    step=1,
+                    key="limite_cdu_tab5"
+                )
+            with col_filtros2:
+                anio_minimo = st.number_input(
+                    "Año mínimo de publicación del libro:",
+                    min_value=1800,
+                    max_value=2026,
+                    value=2015,
+                    step=1,
+                    key="anio_minimo_tab5"
+                )
+
+            biblioteca = biblioteca_seleccionada.upper().strip()
+
+            # Consulta SQL eficiente que filtra por año directamente en la base de datos
+            query = """
+            SELECT
+                l.id_sistema,
+                l.titulo,
+                l.autor,
+                l.anio,
+                l.cdu,
+                COUNT(DISTINCT e.biblioteca) AS id_red_bibliotecas
+            FROM libros l
+            JOIN ejemplares e ON l.id_sistema = e.id_sistema
+            WHERE l.id_sistema NOT IN (
+                SELECT DISTINCT id_sistema
+                FROM ejemplares
+                WHERE UPPER(TRIM(biblioteca)) = ?
             )
-    
-            bib_str = biblioteca_seleccionada
-    
-            if st.button(
-                "Generar recomendaciones",
-                key="btn_recomendaciones"
-            ):
-    
-                with st.spinner("Buscando recomendaciones..."):
-    
-                    df_recom = obtener_recomendaciones_por_cdu(
-                        conn,
-                        bib_str,
-                        limite_por_cdu=limite_cdu
-                    )
-    
-                if df_recom.empty:
-    
-                    st.warning(
-                        "No se encontraron recomendaciones."
-                    )
-    
-                else:
-    
-                    st.success(
-                        f"Se encontraron {len(df_recom)} títulos recomendados."
-                    )
-    
-                    columnas_mostrar = [
-                        "cdu_base",
-                        "titulo",
-                        "autor",
-                        "anio",
-                        "bibliotecas",
-                        "ejemplares",
-                        "score"
-                    ]
-    
-                    columnas_existentes = [
-                        c
-                        for c in columnas_mostrar
-                        if c in df_recom.columns
-                    ]
-    
-                    st.dataframe(
-                        df_recom[columnas_existentes],
-                        use_container_width=True,
-                        hide_index=True
-                    )
-    
-                    csv = df_recom.to_csv(
-                        index=False
-                    ).encode("utf-8")
-    
-                    st.download_button(
-                        "📥 Descargar CSV",
-                        csv,
-                        file_name="recomendaciones_cdu.csv",
-                        mime="text/csv"
-                    )
-    
+            AND CAST(COALESCE(l.anio, 0) AS INTEGER) >= ?
+            GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
+            HAVING id_red_bibliotecas > 0
+            """
+
+            with st.spinner("Consultando recomendaciones por CDU en la red..."):
+                df = pd.read_sql_query(query, conn, params=[biblioteca, int(anio_minimo)])
+
+            if df.empty:
+                st.warning("⚠️ No se encontraron recomendaciones con los filtros seleccionados.")
+            else:
+                # Función para extraer el primer número o prefijo base de la CDU
+                def obtener_cdu_base(cdu):
+                    cdu = str(cdu).strip().upper()
+                    if not cdu or cdu == "NAN":
+                        return "Sin clasificar"
+                    
+                    m = re.match(r'^(\d)', cdu)
+                    if m:
+                        return m.group(1)
+                    m = re.match(r'^(\([0-9]+\))', cdu)
+                    if m:
+                        return m.group(1)
+                    m = re.match(r'^([A-Z]+)', cdu)
+                    if m:
+                        return m.group(1)
+                    return cdu[:1]
+
+                df["cdu_base"] = df["cdu"].apply(obtener_cdu_base)
+                df["score"] = df["id_red_bibliotecas"]
+                df = df.sort_values(["cdu_base", "score"], ascending=[True, False])
+
+                # Mapeo descriptivo oficial de las clases principales de la CDU
+                dicc_nombres_cdu = {
+                    '0': '0 - Generalidades. Ciencia y Conocimiento',
+                    '1': '1 - Filosofía. Psicología',
+                    '2': '2 - Religión. Teología',
+                    '3': '3 - Ciencias Sociales. Derecho. Economía',
+                    '4': '4 - Lengua / Lingüística',
+                    '5': '5 - Ciencias Puras. Naturales',
+                    '6': '6 - Ciencias Aplicadas. Medicina. Tecnología',
+                    '7': '7 - Bellas Artes. Espectáculos. Deportes',
+                    '8': '8 - Lingüística. Filología. Literatura',
+                    '9': '9 - Geografía. Biografías. Historia'
+                }
+
+                st.markdown("### 📚 Clases de la CDU")
+                
+                # Lista única ordenada de las CDU bases encontradas en los resultados
+                cdu_list = sorted(df["cdu_base"].unique())
+
+                for cdu in cdu_list:
+                    # Filtrar y limitar los resultados por el grupo actual
+                    df_cdu = df[df["cdu_base"] == cdu].copy().head(limite_cdu)
+                    if df_cdu.empty:
+                        continue
+                    
+                    nombre_expander = dicc_nombres_cdu.get(cdu, f"Clasificación Especial / Otros: {cdu}")
+                    
+                    # Estructura visual de menús desplegables similares a la pestaña 3
+                    with st.expander(f"📂 {nombre_expander} ({len(df_cdu)} títulos sugeridos)"):
+                        st.markdown("#### 📊 Títulos recomendados en la red")
+                        
+                        df_mostrar = df_cdu[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].copy()
+                        df_mostrar.columns = ["Título", "Autor", "Año", "CDU Completa", "Nº Bibliotecas Red"]
+                        
+                        st.dataframe(
+                            df_mostrar,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        st.markdown("#### 📈 Métricas de la Selección")
+                        col_m1, col_m2 = st.columns(2)
+                        with col_m1:
+                            st.metric("Media de presencia en Red", f"{round(df_cdu['id_red_bibliotecas'].mean(), 1)} bibs.")
+                        with col_m2:
+                            st.metric("Presencia Máxima", f"{int(df_cdu['id_red_bibliotecas'].max())} bibs.")
+
+                        # Botón para descargar el CSV específico de este menú colapsable
+                        csv = df_cdu[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]].to_csv(index=False, sep=';', encoding="utf-8-sig")
+                        st.download_button(
+                            label=f"📥 Descargar CSV de Clase {cdu}",
+                            data=csv,
+                            file_name=f"recomendaciones_CDU_{cdu}.csv",
+                            mime="text/csv",
+                            key=f"dl_tab5_{cdu}"
+                        )
