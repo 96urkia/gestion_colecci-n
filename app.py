@@ -714,76 +714,76 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
     with tab5:
 
-    st.subheader("🎯 Recomendaciones de adquisición por CDU")
-
-    if conn is None:
-        st.error("No se pudo conectar con la base de datos.")
-    else:
-
-        limite_cdu = st.slider(
-            "Número de recomendaciones por CDU",
-            min_value=1,
-            max_value=50,
-            value=10
-        )
-
-        bib_str = biblioteca_seleccionada
-
-        if st.button(
-            "Generar recomendaciones",
-            key="btn_recomendaciones"
-        ):
-
-            with st.spinner("Buscando recomendaciones..."):
-
-                df_recom = obtener_recomendaciones_por_cdu(
-                    conn,
-                    bib_str,
-                    limite_por_cdu=limite_cdu
-                )
-
-            if df_recom.empty:
-
-                st.warning(
-                    "No se encontraron recomendaciones."
-                )
-
-            else:
-
-                st.success(
-                    f"Se encontraron {len(df_recom)} títulos recomendados."
-                )
-
-                columnas_mostrar = [
-                    "cdu_base",
-                    "titulo",
-                    "autor",
-                    "anio",
-                    "bibliotecas",
-                    "ejemplares",
-                    "score"
-                ]
-
-                columnas_existentes = [
-                    c
-                    for c in columnas_mostrar
-                    if c in df_recom.columns
-                ]
-
-                st.dataframe(
-                    df_recom[columnas_existentes],
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                csv = df_recom.to_csv(
-                    index=False
-                ).encode("utf-8")
-
-                st.download_button(
-                    "📥 Descargar CSV",
-                    csv,
-                    file_name="recomendaciones_cdu.csv",
-                    mime="text/csv"
-                )
-
+        st.subheader("🎯 Recomendaciones de adquisición por CDU")
+    
+        if conn is None:
+            st.error("No se pudo conectar con la base de datos.")
+        else:
+    
+            limite_cdu = st.slider(
+                "Número de recomendaciones por CDU",
+                min_value=1,
+                max_value=50,
+                value=10
+            )
+    
+            bib_str = biblioteca_seleccionada
+    
+            if st.button(
+                "Generar recomendaciones",
+                key="btn_recomendaciones"
+            ):
+    
+                with st.spinner("Buscando recomendaciones..."):
+    
+                    df_recom = obtener_recomendaciones_por_cdu(
+                        conn,
+                        bib_str,
+                        limite_por_cdu=limite_cdu
+                    )
+    
+                if df_recom.empty:
+    
+                    st.warning(
+                        "No se encontraron recomendaciones."
+                    )
+    
+                else:
+    
+                    st.success(
+                        f"Se encontraron {len(df_recom)} títulos recomendados."
+                    )
+    
+                    columnas_mostrar = [
+                        "cdu_base",
+                        "titulo",
+                        "autor",
+                        "anio",
+                        "bibliotecas",
+                        "ejemplares",
+                        "score"
+                    ]
+    
+                    columnas_existentes = [
+                        c
+                        for c in columnas_mostrar
+                        if c in df_recom.columns
+                    ]
+    
+                    st.dataframe(
+                        df_recom[columnas_existentes],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+    
+                    csv = df_recom.to_csv(
+                        index=False
+                    ).encode("utf-8")
+    
+                    st.download_button(
+                        "📥 Descargar CSV",
+                        csv,
+                        file_name="recomendaciones_cdu.csv",
+                        mime="text/csv"
+                    )
+    
