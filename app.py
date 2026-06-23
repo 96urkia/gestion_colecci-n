@@ -898,32 +898,40 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.")
 
             # ======================================================================
-            # C) RECOMENDACIONES POR MATERIAS (NUEVA SECCIÓN DETALLADA)
+            # C) RECOMENDACIONES POR MATERIAS (BÚSQUEDA POR DESCRIPTOR TEMÁTICO)
             # ======================================================================
             with subtab_rec_materias:
                 st.subheader("📝 Análisis de Títulos por Materias Únicas")
-                st.markdown("Consulta qué libros de una temática concreta (CDU) triunfan en Navarra pero faltan en tu centro, mostrando sus etiquetas temáticas limpias.")
+                st.markdown("Consulta qué libros de una temática concreta triunfan en la Red de Navarra pero faltan en tu centro, buscando directamente por sus descriptores o etiquetas temáticas.")
                 
                 if conn is None:
                     st.error("No hay conexión activa con la base de datos.")
                 else:
                     col_m1, col_m2 = st.columns(2)
                     with col_m1:
-                        cdu_materia = st.text_input("📂 Prefijo CDU a analizar:", value="32", help="Ej: 32 para Política, 004 para Informática, 94 para Historia.", key="cdu_m_in").strip()
+                        texto_materia = st.text_input(
+                            "📝 Materia o concepto a buscar:", 
+                            value="Política", 
+                            help="Ej: Política, Informática, Historia, Inteligencia artificial, Cambio climático...", 
+                            key="materia_text_in"
+                        ).strip()
+                        
                         anios_mat = st.number_input("📅 Antigüedad máxima (Años transcurridos):", min_value=1, max_value=40, value=2, key="anios_m_in")
-                    with col_m2:  # <-- CORREGIDO: Cambiado col_f2 por col_m2
+                    
+                    with col_m2:
                         min_ejemplares_mat = st.number_input("📚 Mínimo ejemplares en la Red:", min_value=1, max_value=100, value=3, key="min_ej_m_in")
                         limite_mat = st.number_input("🔢 Límite máximo de sugerencias:", min_value=5, max_value=500, value=100, step=5, key="limite_m_in")
                     
                     if st.button("🔍 Extraer y Filtrar por Materias", type="primary", use_container_width=True):
-                        if not cdu_materia:
-                            st.warning("⚠️ Introduce un código CDU de inicio para realizar la consulta.")
+                        if not texto_materia:
+                            st.warning("⚠️ Introduce una palabra o materia de interés para realizar la consulta.")
                         else:
-                            with st.spinner("Filtrando base de datos y unificando descriptores temáticos..."):
+                            with st.spinner(f"Filtrando libros en la Red que contengan '{texto_materia}'..."):
+                                # Se invoca la función pasando el texto de la materia (adaptado el parámetro de cdu -> materia)
                                 df_mat_resultado = obtener_recomendaciones_por_materia(
                                     conexion=conn,
                                     biblioteca=biblioteca_seleccionada,
-                                    cdu=cdu_materia,
+                                    materia=texto_materia,  # <- Cambiado de 'cdu' a 'materia' para recibir el texto
                                     anios=anios_mat,
                                     min_ejemplares=min_ejemplares_mat,
                                     limite=limite_mat
@@ -938,17 +946,21 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                         "ID Sistema", "Título", "Autor", "Editorial", "Año", "CDU", "ISBN", "Materias", "Ejemplares Red", "Bibliotecas Red"
                                     ]
                                     
-                                    st.success(f"¡Éxito! Encontrados {len(df_print)} libros relevantes ausentes en tu centro.")
+                                    st.success(f"¡Éxito! Encontrados {len(df_print)} libros sobre '{texto_materia}' relevantes ausentes en tu centro.")
                                     st.dataframe(df_print, use_container_width=True, hide_index=True)
                                     
+                                    # Generación del CSV limpio
                                     csv_materias = df_print.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                                    
+                                    # Normalizamos el nombre del archivo eliminando espacios problemáticos
+                                    nombre_archivo_limpio = texto_materia.lower().replace(" ", "_")
+                                    
                                     st.download_button(
-                                        label=f"📥 Descargar Recomendaciones CDU {cdu_materia} (CSV)",
+                                        label=f"📥 Descargar Recomendaciones de '{texto_materia}' (CSV)",
                                         data=csv_materias,
-                                        file_name=f"rec_materias_cdu_{cdu_materia}.csv",
+                                        file_name=f"rec_materias_{nombre_archivo_limpio}.csv",
                                         mime="text/csv",
                                         key="btn_dl_mat"
                                     )
                                 else:
-                                    st.info(f"ℹ️ No se detectan títulos ausentes que cumplan con los filtros para la CDU {cdu_materia}.")
-            
+                                    st.info(f"ℹ️ No se detectan títulos ausentes que contengan el descriptor temático '{texto_materia}' con los filtros actuales.")
