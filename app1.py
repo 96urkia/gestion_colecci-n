@@ -829,4 +829,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
                            
-                            if not hay_inf: st.info("No hay sugerencias i
+                            if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.") 
+
+
