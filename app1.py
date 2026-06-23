@@ -1,4 +1,4 @@
-mport os
+import os
 import sqlite3
 import urllib.request
 import streamlit as st
