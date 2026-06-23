@@ -512,8 +512,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
          # C) ANÁLISIS PROFUNDO POR SIGNATURA
         with subtab_signatura:
-            st.subheader("🔎 Auditoría y Expurgo de Colección")
-            st.write("Busca y filtra el fondo detallado para localizar libros obsoletos, desgastados o con rendimiento irregular.")
+            st.subheader("🔎 Analiza la colección a través de las signaturas.")
+            
            
             # Función de seguridad para la clasificación de secciones
             def identificar_infantil(categoria):
