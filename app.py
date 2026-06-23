@@ -608,10 +608,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 if "INFANTIL" in cat_str or "JUVENIL" in cat_str: return True
                 if re.match(r'^(I[0-9]?|JN|IC|IP|IT)(\s|$)', cat_str): return True
                 return False
-        
+       
             # Aseguramos la columna de control en el dataframe de trabajo
             df_completo['es_infantil'] = df_completo['categoria'].apply(identificar_infantil)
-        
+       
             # --- 1. FILTRO DE PÚBLICO / SECCIÓN ---
             filtro_pub = st.radio("1. Selecciona la Sección:", ["📚 Todo el fondo", "👨‍💼 Solo Adultos", "👶 Solo Infantil / Juvenil"], horizontal=True)
            
@@ -620,12 +620,12 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 df_nivel1 = df_nivel1[~df_nivel1['es_infantil']]
             elif "Infantil" in filtro_pub:
                 df_nivel1 = df_nivel1[df_nivel1['es_infantil']]
-        
+       
             st.markdown("---")
-        
+       
             # --- 2. PANEL DE CONTROL Y CRITERIOS DE BÚSQUEDA (DESPLEGADOS) ---
             st.markdown("#### 🎯 Criterios de Selección y Búsqueda")
-            
+           
             # Primera fila de filtros: Búsqueda libre e Historial de Préstamos
             col_busqueda, col_prestamos = st.columns([2, 1])
            
@@ -638,50 +638,47 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                
             with col_prestamos:
                 filtro_pr = st.selectbox(
-                    "🪪 Historial Préstamos:", 
+                    "🪪 Historial Préstamos:",
                     ["Todos", "Nunca prestado (0)", "Préstamo Estándar (1)", "Alta Demanda (2)"]
                 )
-        
+       
             # Segunda fila de filtros: Jerarquía de categorías (Visibles y dinámicos)
             col_cat1, col_cat2 = st.columns(2)
            
             with col_cat1:
                 opciones_cat = ["Todas"] + sorted(df_nivel1['categoria'].dropna().unique().tolist())
                 filtro_cat = st.selectbox("🗂️ Categoría Principal:", opciones_cat)
-        
+       
             # Filtrado intermedio para que el segundo desplegable responda al primero
             df_nivel2 = df_nivel1.copy()
             if filtro_cat != "Todas":
                 df_nivel2 = df_nivel2[df_nivel2['categoria'] == filtro_cat]
-        
+       
             with col_cat2:
                 def extraer_raiz(sig):
                     s = str(sig).strip().upper()
                     m = re.match(r'^([A-Z]*\s*\d{2})', s)
                     if m: return m.group(1)
                     return s.split()[0][:3]
-        
+       
                 raices_existentes = df_nivel2['signatura_real'].dropna().apply(extraer_raiz).unique()
                 opciones_sub = ["Todas"] + sorted(raices_existentes.tolist())
                 filtro_sub = st.selectbox("🔎 Sub-signatura de la categoría:", opciones_sub)
-        
+       
             st.markdown("---")
-        
+       
             # --- 3. APLICACIÓN DE LA LÓGICA DE FILTRADO COMBINADA ---
             df_final_expurgo = df_nivel1.copy()
            
-             # --- 3. APLICACIÓN DE LA LÓGICA DE FILTRADO COMBINADA ---
-    df_final_expurgo = df_nivel1.copy()
-   
             # 1. Filtrado por la caja de texto (Soporte de comodines '*')
             if busqueda_sig:
                 if '*' in busqueda_sig:
                     import re
-                    # 1. Escapamos caracteres especiales de regex (convierte '(' en '\(', '*' en '\*', etc.)
+                    # 1. Escapamos caracteres especiales de regex
                     patron_escapado = re.escape(busqueda_sig)
-                    # 2. Convertimos el asterisco escapado '\*' en el comodín universal '.*' compatible con PyArrow
+                    # 2. Convertimos el asterisco en comodín compatible con PyArrow
                     regex_patron = patron_escapado.replace(r'\*', '.*')
-                    
+                   
                     df_final_expurgo = df_final_expurgo[
                         df_final_expurgo['signatura_real'].str.upper().str.strip().str.match(regex_patron, na=False)
                     ]
@@ -691,7 +688,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         df_final_expurgo['signatura_real'].str.upper().str.strip().str.startswith(busqueda_sig, na=False)
                     ]
 
-            
             # 2. Filtrado por Desplegables de Categorías (Ahora acumulativos)
             if filtro_cat != "Todas":
                 df_final_expurgo = df_final_expurgo[df_final_expurgo['categoria'] == filtro_cat]
@@ -707,48 +703,44 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 df_final_expurgo = df_final_expurgo[df_final_expurgo['prestamos'] == 1]
             elif "Alta" in filtro_pr:
                 df_final_expurgo = df_final_expurgo[df_final_expurgo['prestamos'] == 2]
-        
-            # A partir de aquí puedes continuar pintando tu st.dataframe(df_final_expurgo) u otras métricas.
-
-
+       
             # --- 5. RENDERIZADO DE LA TABLA DETALLADA ---
             st.markdown(f"**Resultados encontrados: {len(df_final_expurgo)} documentos**")
-            
+           
             tabla_mostrar = df_final_expurgo[['record_id', 'signatura_real', 'titulo', 'year', 'categoria', 'prestamos']].copy()
             tabla_mostrar.columns = ['id_sistema', 'Signatura', 'Título', 'Año', 'Categoría', 'Préstamos']
-            
+           
             st.dataframe(tabla_mostrar, use_container_width=True, hide_index=True)
 
             # --- 6. NUEVA TABLA DINÁMICA DE RESUMEN EJECUTIVO ---
             st.markdown("### 📊 Indicadores Globales de la Selección")
-            
+           
             if not df_final_expurgo.empty:
                 # A) Número de volúmenes totales en el filtro activo
                 num_volumenes = len(df_final_expurgo)
-                
-                # B) % de la colección que acumula préstamos (ej: cuántos tienen al menos 1 préstamo)
+               
+                # B) % de la colección que acumula préstamos
                 libros_prestados = (df_final_expurgo['prestamos'] > 0).sum()
                 pct_prestados = round((libros_prestados / num_volumenes) * 100, 1)
-                
-                # C) Año medio de edición del tramo seleccionado (omitiendo nulos)
+               
+                # C) Año medio de edición del tramo seleccionado
                 anios_validos = df_final_expurgo['year'].dropna()
                 if not anios_validos.empty:
                     anio_medio_col = int(anios_validos.mean())
                 else:
                     anio_medio_col = "Sin datos de año"
-                
+               
                 # Estructuramos los datos calculados en un pequeño DataFrame resumen
                 df_resumen_kpi = pd.DataFrame([{
                     "Número de volúmenes": f"{num_volumenes} ej.",
                     "% de préstamos (Uso Activo)": f"{pct_prestados} %",
                     "Año medio de la colección": anio_medio_col
                 }])
-                
+               
                 # Renderizado estilizado de la tabla de indicadores
                 st.dataframe(df_resumen_kpi, use_container_width=True, hide_index=True)
             else:
                 st.info("ℹ️ Modifica los criterios de búsqueda para calcular los indicadores del fondo.")
-
 
 
     # ==========================================
