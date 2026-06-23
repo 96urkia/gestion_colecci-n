@@ -926,7 +926,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         key="modo_busqueda_materias"
                     )
                     
-                    # Inicialización de la variable que enviaremos al motor de búsqueda
+                    # Inicialización de las variables que enviaremos al motor de búsqueda
                     patron_final_regex = ".*"
                     texto_para_mostrar = ""
 
@@ -937,11 +937,17 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             
                             # Normalización de separadores MARC21
                             df_lista_m['materia_limpia'] = df_lista_m['materia'].str.replace(r'\s*-?\s*--\s*', ' -- ', regex=True)
-                            df_niveles = df_lista_m['materia_limpia'].str.split(' -- ', expand=True)
                             
+                            # Expandir dinámicamente según las subdivisiones reales en la BD
+                            df_niveles_temp = df_lista_m['materia_limpia'].str.split(' -- ', expand=True)
+                            
+                            # Asegurar un mínimo de 3 columnas para evitar fallos de índice si la BD es muy simple
                             for i in range(3):
-                                if i not in df_niveles.columns:
-                                    df_niveles[i] = None
+                                if i not in df_niveles_temp.columns:
+                                    df_niveles_temp[i] = None
+                                    
+                            # PODA SEGURA: nos quedamos estrictamente con los 3 primeros niveles
+                            df_niveles = df_niveles_temp.iloc[:, :3].copy()
                             df_niveles.columns = ['Nivel_1', 'Nivel_2', 'Nivel_3']
                             
                         except Exception as e:
@@ -957,28 +963,34 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             sel_n1 = st.selectbox("1️⃣ Materia Principal:", options=opciones_n1, key="mat_n1")
 
                         with col_n2:
-                            filtro_n1 = df_niveles[df_niveles['Nivel_1'] == sel_n1]
-                            opciones_n2 = sorted([str(m) for m in filtro_n1['Nivel_2'].dropna().unique() if m])
-                            sel_n2 = st.selectbox("2️⃣ Subdivisión 1 (Opcional):", options=["(Todas)"] + opciones_n2, key="mat_n2") if opciones_n2 else "(Todas)"
+                            if sel_n1:
+                                filtro_n1 = df_niveles[df_niveles['Nivel_1'] == sel_n1]
+                                opciones_n2 = sorted([str(m) for m in filtro_n1['Nivel_2'].dropna().unique() if m])
+                                sel_n2 = st.selectbox("2️⃣ Subdivisión 1 (Opcional):", options=["(Todas)"] + opciones_n2, key="mat_n2") if opciones_n2 else "(Todas)"
+                            else:
+                                sel_n2 = "(Todas)"
 
                         with col_n3:
-                            if sel_n2 != "(Todas)":
+                            if sel_n1 and sel_n2 != "(Todas)":
                                 filtro_n2 = filtro_n1[filtro_n1['Nivel_2'] == sel_n2]
                                 opciones_n3 = sorted([str(m) for m in filtro_n2['Nivel_3'].dropna().unique() if m])
                                 sel_n3 = st.selectbox("3️⃣ Subdivisión 2 (Opcional):", options=["(Todas)"] + opciones_n3, key="mat_n3") if opciones_n3 else "(Todas)"
                             else:
                                 sel_n3 = "(Todas)"
 
-                        # Traducir la selección jerárquica a un patrón Regex seguro
-                        # Escapamos los términos literales y usamos .* para saltar los guiones variables de la DB
-                        componentes = [re.escape(sel_n1)]
-                        if sel_n2 != "(Todas)":
-                            componentes.append(re.escape(sel_n2))
-                            if sel_n3 != "(Todas)":
-                                componentes.append(re.escape(sel_n3))
-                        
-                        patron_final_regex = ".*".join(componentes)
-                        texto_para_mostrar = " ➔ ".join([sel_n1, sel_n2, sel_n3]).replace(" ➔ (Todas)", "")
+                        # Traducir la selección jerárquica a un patrón Regex seguro protegiendo contra None
+                        if sel_n1:
+                            componentes = [re.escape(sel_n1)]
+                            if sel_n2 != "(Todas)":
+                                componentes.append(re.escape(sel_n2))
+                                if sel_n3 != "(Todas)":
+                                    componentes.append(re.escape(sel_n3))
+                            
+                            patron_final_regex = ".*".join(componentes)
+                            texto_para_mostrar = " ➔ ".join([sel_n1, sel_n2, sel_n3]).replace(" ➔ (Todas)", "")
+                        else:
+                            patron_final_regex = ".*"
+                            texto_para_mostrar = ""
 
                     else:
                         # INTERFAZ DE TEXTO LIBRE AVANZADO
@@ -1019,6 +1031,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     if st.button("🔍 Extraer y Filtrar por Materias", type="primary", use_container_width=True):
                         if modo_busqueda == "Búsqueda avanzada (Texto libre con comodines)" and not texto_libre.strip():
                             st.warning("⚠️ Por favor, introduce algún término antes de iniciar la búsqueda por texto libre.")
+                        elif modo_busqueda == "Selector Jerárquico asistido" and not texto_para_mostrar:
+                            st.warning("⚠️ Por favor, selecciona una materia válida antes de ejecutar el análisis.")
                         else:
                             with st.spinner(f"Analizando registros bajo el patrón conceptual: '{texto_para_mostrar}'..."):
                                 
