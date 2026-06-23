@@ -19,7 +19,7 @@ if 'resultado' not in st.session_state:
 # CONFIGURACIÓN DE BASE DE DATOS
 # ==========================================
 DB_PATH = "gestion_coleccion.db"
-DB_URL = "https://www.dropbox.com/scl/fi/zlhw2qkfpebtvzaimxto1/bibliotecas_navarra2.db?rlkey=fg46liauy6omsq3dkz4gnn5pk&st=2myw0ice&dl=0"
+DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=1"
 
 def asegurar_base_de_datos():
     """Maneja la descarga del archivo en disco. 
@@ -64,69 +64,45 @@ else:
 # ==========================================
 # FUNCIONES AUXILIARES DE RECOMENDACIÓN
 # ==========================================
-def obtener_recomendaciones_por_materia(conexion, biblioteca, cdu, anios=2, min_ejemplares=3, limite=200):
-    """
-    Busca libros de una materia específica (CDU) ausentes en la biblioteca actual,
-    concatenando sus materias de manera única (sin duplicados).
-    """
-    from datetime import datetime
-    anio_minimo = datetime.now().year - anios
-    
-    query = """
-    SELECT
-        l.id_sistema,
-        l.titulo,
-        l.autor,
-        l.editorial,
-        l.anio,
-        l.cdu,
-        l.isbn,
-        
-        -- Subconsulta correlacionada para extraer materias sin duplicación por JOIN
-        (
-            SELECT GROUP_CONCAT(materia, ' | ') 
-            FROM (SELECT DISTINCT materia FROM materias WHERE id_sistema = l.id_sistema)
-        ) AS materias,
-
-        COUNT(DISTINCT e.id) AS ejemplares,
-        COUNT(DISTINCT e.biblioteca) AS bibliotecas
-
-    FROM libros l
-    JOIN ejemplares e ON l.id_sistema = e.id_sistema
-
-    WHERE
-        CAST(SUBSTR(l.anio,1,4) AS INTEGER) >= ?
-        AND l.cdu LIKE ?
-        AND l.id_sistema NOT IN (
+def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
+    if isinstance(bibliotecas, str):
+        bibliotecas = [bibliotecas]
+    elif not isinstance(bibliotecas, (list, tuple)):
+        st.error(f"❌ 'bibliotecas' debe ser texto o lista. Recibí: {type(bibliotecas)}")
+        return pd.DataFrame()
+   
+    if not bibliotecas:
+        st.error("❌ Debes indicar al menos una biblioteca.")
+        return pd.DataFrame()
+   
+    placeholders = ','.join(['?'] * len(bibliotecas))
+   
+    query = f"""
+        SELECT
+            l.id_sistema,
+            l.titulo,
+            l.autor,
+            l.anio,
+            COUNT(DISTINCT e.biblioteca) as total_bibliotecas
+        FROM libros l
+        JOIN ejemplares e ON l.id_sistema = e.id_sistema
+        WHERE l.id_sistema NOT IN (
             SELECT DISTINCT id_sistema
             FROM ejemplares
-            WHERE UPPER(biblioteca) LIKE ?
+            WHERE TRIM(UPPER(biblioteca)) IN ({placeholders})
         )
-
-    GROUP BY l.id_sistema
-    HAVING ejemplares >= ?
-    ORDER BY bibliotecas DESC, ejemplares DESC
-    LIMIT ?
+        GROUP BY l.id_sistema, l.titulo, l.autor, l.anio
+        ORDER BY total_bibliotecas DESC
+        LIMIT ?
     """
     try:
-        df = pd.read_sql_query(
-            query,
-            conexion,
-            params=(
-                anio_minimo,
-                f"{cdu}%",
-                f"%{biblioteca.upper().strip()}%",
-                min_ejemplares,
-                limite
-            )
-        )
-        if not df.empty:
-            df["score"] = (df["bibliotecas"] * 10) + df["ejemplares"]
-            df = df.sort_values("score", ascending=False)
+        params = [b.upper().strip() for b in bibliotecas] + [int(limite)]
+        df = pd.read_sql_query(query, conexion, params=params)
         return df
     except Exception as e:
-        st.error(f"❌ Error en la consulta de materias: {str(e)}")
+        st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
+
 
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
@@ -684,10 +660,9 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     # BLOQUE 2: RECOMENDACIONES DE COMPRA
     # ==========================================
     with pestana_compras:
-        subtab_rec_gen, subtab_rec_cdu, subtab_rec_materias = st.tabs([
+        subtab_rec_gen, subtab_rec_cdu = st.tabs([
             "🌐 A) Recomendaciones Generales", 
-            "📚 B) Recomendaciones por CDU",
-            "🎯 C) Recomendaciones por Materias"  # <-- Nueva pestaña integrada
+            "📚 B) Recomendaciones por CDU"
         ])
         
         # A) RECOMENDACIONES GENERALES
@@ -709,7 +684,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         # B) RECOMENDACIONES POR CDU (CON REGLAS ESTRICTAS DE FILTRADO ANTI-RUIDO)
         with subtab_rec_cdu:
             st.subheader("🎯 Sugerencias de Adquisición por CDU")
-            
+           
             if conn is None:
                 st.error("No hay conexión activa con la base de datos.")
             else:
@@ -744,7 +719,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
                 HAVING id_red_bibliotecas > 0
                 """
-                
+               
                 with st.spinner("Modelando el embudo de categorías de la Red..."):
                     df_raw_cdu = pd.read_sql_query(query_cdu, conn, params=[biblioteca, int(anio_minimo)])
 
@@ -793,7 +768,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 return None, None
                             if cdu.startswith("821"):
                                 return "Adultos", "Ficción"
-                            
+                           
                             m = re.match(r'^(\d)', cdu)
                             if m:
                                 digito = m.group(1)
@@ -805,7 +780,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         res_eval = df_raw_cdu.apply(clasificar_libro, axis=1)
                         df_raw_cdu["subtab_destino"] = [r[0] for r in res_eval]
                         df_raw_cdu["categoria_final"] = [r[1] for r in res_eval]
-                        
+                       
                         # Eliminamos el ruido no clasificado
                         df_raw_cdu = df_raw_cdu[df_raw_cdu["subtab_destino"].notna()].copy()
                         df_raw_cdu = df_raw_cdu.sort_values("id_red_bibliotecas", ascending=False)
@@ -853,64 +828,5 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     hay_inf = True
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
-                            
-                            if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.")
-
-        # ======================================================================
-        # C) RECOMENDACIONES POR MATERIAS (NUEVA SECCIÓN DETALLADA)
-        # ======================================================================
-        with subtab_rec_materias:
-            st.subheader("📝 Análisis de Títulos por Materias Únicas")
-            st.markdown("Consulta qué libros de una temática concreta (CDU) triunfan en Navarra pero faltan en tu centro, mostrando sus etiquetas temáticas limpias.")
-            
-            if conn is None:
-                st.error("No hay conexión activa con la base de datos.")
-            else:
-                col_m1, col_m2 = st.columns(2)
-                with col_m1:
-                    cdu_materia = st.text_input("📂 Prefijo CDU a analizar:", value="32", help="Ej: 32 para Política, 004 para Informática, 94 para Historia.", key="cdu_m_in").strip()
-                    anios_mat = st.number_input("📅 Antigüedad máxima (Años transcurridos):", min_value=1, max_value=40, value=2, key="anios_m_in")
-                with col_f2: # Reutilizamos espaciado visual coordinado
-                    min_ejemplares_mat = st.number_input("📚 Mínimo ejemplares en la Red:", min_value=1, max_value=100, value=3, key="min_ej_m_in")
-                    limite_mat = st.number_input("🔢 Límite máximo de sugerencias:", min_value=5, max_value=500, value=100, step=5, key="limite_m_in")
-                
-                if st.button("🔍 Extraer y Filtrar por Materias", type="primary", use_container_width=True):
-                    if not cdu_materia:
-                        st.warning("⚠️ Introduce un código CDU de inicio para realizar la consulta.")
-                    else:
-                        with st.spinner("Filtrando base de datos y unificando descriptores temáticos..."):
-                            df_mat_resultado = obtener_recomendaciones_por_materia(
-                                conexion=conn,
-                                biblioteca=biblioteca_seleccionada,
-                                cdu=cdu_materia,
-                                anios=anios_mat,
-                                min_ejemplares=min_ejemplares_mat,
-                                limite=limite_mat
-                            )
-                            
-                            if not df_mat_resultado.empty:
-                                # Seleccionamos y renombramos columnas de cara al usuario final
-                                df_print = df_mat_resultado[[
-                                    "id_sistema", "titulo", "autor", "editorial", "anio", "cdu", "isbn", "materias", "ejemplares", "bibliotecas"
-                                ]].copy()
-                                
-                                df_print.columns = [
-                                    "ID Sistema", "Título", "Autor", "Editorial", "Año", "CDU", "ISBN", "Materias", "Ejemplares Red", "Bibliotecas Red"
-                                ]
-                                
-                                st.success(f"¡Éxito! Encontrados {len(df_print)} libros relevantes ausentes en tu centro.")
-                                
-                                # Visualizador interactivo de Streamlit
-                                st.dataframe(df_print, use_container_width=True, hide_index=True)
-                                
-                                # Botón de descarga CSV integrado compatible con Excel (Encoding utf-8-sig)
-                                csv_materias = df_print.to_csv(index=False, sep=';', encoding="utf-8-sig")
-                                st.download_button(
-                                    label=f"📥 Descargar Recomendaciones CDU {cdu_materia} (CSV)",
-                                    data=csv_materias,
-                                    file_name=f"rec_materias_cdu_{cdu_materia}.csv",
-                                    mime="text/csv",
-                                    key="btn_dl_mat"
-                                )
-                            else:
-                                st.info(f"ℹ️ No se detectan títulos ausentes que cumplan con los filtros para la CDU {cdu_materia}.")
+                           
+                            if not hay_inf: st.info("No hay sugerencias i
