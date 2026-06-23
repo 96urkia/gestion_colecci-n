@@ -20,7 +20,7 @@ if 'resultado' not in st.session_state:
 # ==========================================
 DB_PATH = "gestion_coleccion.db"
 # 1. CAMBIO CLAVE: Cambiamos dl=0 por dl=1 al final de la URL para forzar la descarga directa del binario (.db)
-DB_URL = "https://www.dropbox.com/scl/fi/zlhw2qkfpebtvzaimxto1/bibliotecas_navarra2.db?rlkey=fg46liauy6omsq3dkz4gnn5pk&st=jr3xe9k4&dl=0
+DB_URL = "https://www.dropbox.com/scl/fi/zlhw2qkfpebtvzaimxto1/bibliotecas_navarra2.db?rlkey=fg46liauy6omsq3dkz4gnn5pk&st=jr3xe9k4&dl=0"
 
 def asegurar_base_de_datos():
     """Maneja la descarga del archivo en disco. 
