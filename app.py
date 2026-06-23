@@ -19,7 +19,7 @@ if 'resultado' not in st.session_state:
 # CONFIGURACIÓN DE BASE DE DATOS
 # ==========================================
 DB_PATH = "gestion_coleccion.db"
-DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=1"
+DB_URL = "https://www.dropbox.com/scl/fi/zlhw2qkfpebtvzaimxto1/bibliotecas_navarra2.db?rlkey=fg46liauy6omsq3dkz4gnn5pk&st=umks3ppu&dl=0"
 
 def asegurar_base_de_datos():
     """Maneja la descarga del archivo en disco. 
