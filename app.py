@@ -103,15 +103,13 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
-def obtener_recomendaciones_por_materia(conexion, biblioteca, cdu, anios=2, min_ejemplares=3, limite=200):
-    """
-    Busca libros de una materia específica (CDU) ausentes en la biblioteca actual,
-    concatenando sus materias de manera única (sin duplicados).
-    """
-    from datetime import datetime
-    anio_minimo = datetime.now().year - anios
+def obtener_recomendaciones_por_materia(conexion, biblioteca, materia_seleccionada, anios, min_ejemplares, limite):
+    import datetime
+    import pandas as pd
     
-    query = """
+    anio_minimo = datetime.datetime.now().year - anios
+    
+    consulta = """
     SELECT
         l.id_sistema,
         l.titulo,
@@ -121,21 +119,25 @@ def obtener_recomendaciones_por_materia(conexion, biblioteca, cdu, anios=2, min_
         l.cdu,
         l.isbn,
         
-        -- Subconsulta correlacionada para extraer materias sin duplicación por JOIN
+        -- Subconsulta para concatenar las materias únicas asociadas al libro
         (
             SELECT GROUP_CONCAT(materia, ' | ') 
             FROM (SELECT DISTINCT materia FROM materias WHERE id_sistema = l.id_sistema)
         ) AS materias,
 
         COUNT(DISTINCT e.id) AS ejemplares,
-        COUNT(DISTINCT e.biblioteca) AS bibliotecas
+        COUNT(DISTINCT e.col_biblioteca) AS bibliotecas -- Ajusta si tu columna de centro se llama 'biblioteca' o 'col_biblioteca'
 
     FROM libros l
     JOIN ejemplares e ON l.id_sistema = e.id_sistema
 
     WHERE
         CAST(SUBSTR(l.anio,1,4) AS INTEGER) >= ?
-        AND l.cdu LIKE ?
+        
+        -- CAMBIO CLAVE: Filtramos los libros vinculados a la materia de texto elegida
+        AND l.id_sistema IN (SELECT DISTINCT id_sistema FROM materias WHERE materia = ?)
+        
+        -- Excluir los libros que ya están en tu biblioteca
         AND l.id_sistema NOT IN (
             SELECT DISTINCT id_sistema
             FROM ejemplares
@@ -147,26 +149,25 @@ def obtener_recomendaciones_por_materia(conexion, biblioteca, cdu, anios=2, min_
     ORDER BY bibliotecas DESC, ejemplares DESC
     LIMIT ?
     """
-    try:
-        df = pd.read_sql_query(
-            query,
-            conexion,
-            params=(
-                anio_minimo,
-                f"{cdu}%",
-                f"%{biblioteca.upper().strip()}%",
-                min_ejemplares,
-                limite
-            )
+    
+    df = pd.read_sql_query(
+        consulta,
+        conexion,
+        params=(
+            anio_minimo,
+            materia_seleccionada,
+            f"%{biblioteca.upper()}%",
+            min_ejemplares,
+            limite
         )
-        if not df.empty:
-            df["score"] = (df["bibliotecas"] * 10) + df["ejemplares"]
-            df = df.sort_values("score", ascending=False)
-        return df
-    except Exception as e:
-        st.error(f"❌ Error en la consulta de materias: {str(e)}")
-        return pd.DataFrame()
-
+    )
+    
+    # Calcular la puntuación combinada (Score) como hacías en tu script
+    if not df.empty:
+        df["score"] = (df["bibliotecas"] * 10) + df["ejemplares"]
+        df = df.sort_values("score", ascending=False)
+        
+    return df
 
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
