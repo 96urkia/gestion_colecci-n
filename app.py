@@ -633,7 +633,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 busqueda_sig = st.text_input(
                     "⌨️ Buscar por Signatura / CDU (Soporta comodines como `*`):",
                     value="",
-                    placeholder="Ej: *(460)* para España, 821* para literatura, o N ESP"
+                    placeholder="Ej: *(460.16)* para Navarra, 821* para literatura, o ENG * para libros en inglés."
                 ).strip().upper()
                
             with col_prestamos:
