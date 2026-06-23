@@ -338,7 +338,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">📚 Gestión de la colección</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Herramienta para conocer mejor la colección</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Herramienta para ayudarte a conocer un poco mejor la colección de tu biblioteca</div>', unsafe_allow_html=True)
 
 # ==========================================
 # PANEL LATERAL (SIDEBAR)
