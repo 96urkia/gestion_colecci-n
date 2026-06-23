@@ -746,10 +746,12 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 else:
                     st.info("No se encontraron recomendaciones pendientes.")
 
+        # ------------------------------------------
         # B) RECOMENDACIONES POR CDU (CON REGLAS ESTRICTAS DE FILTRADO ANTI-RUIDO)
+        # ------------------------------------------
         with subtab_rec_cdu:
             st.subheader("🎯 Sugerencias de Adquisición por CDU")
-           
+            
             if conn is None:
                 st.error("No hay conexión activa con la base de datos.")
             else:
@@ -784,7 +786,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
                 HAVING id_red_bibliotecas > 0
                 """
-               
+                
                 with st.spinner("Modelando el embudo de categorías de la Red..."):
                     df_raw_cdu = pd.read_sql_query(query_cdu, conn, params=[biblioteca, int(anio_minimo)])
 
@@ -833,11 +835,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 return None, None
                             if cdu.startswith("821"):
                                 return "Adultos", "Ficción"
-                           
+                            
                             m = re.match(r'^(\d)', cdu)
                             if m:
                                 digito = m.group(1)
-                                # Se incluye explícitamente CDU 3 y se descarta CDU 4 por inexistencia
                                 if digito in ['0', '1', '2', '3', '5', '6', '7', '8', '9']:
                                     return "Adultos", f"CDU {digito}"
                             return None, None
@@ -845,7 +846,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         res_eval = df_raw_cdu.apply(clasificar_libro, axis=1)
                         df_raw_cdu["subtab_destino"] = [r[0] for r in res_eval]
                         df_raw_cdu["categoria_final"] = [r[1] for r in res_eval]
-                       
+                        
                         # Eliminamos el ruido no clasificado
                         df_raw_cdu = df_raw_cdu[df_raw_cdu["subtab_destino"].notna()].copy()
                         df_raw_cdu = df_raw_cdu.sort_values("id_red_bibliotecas", ascending=False)
@@ -893,9 +894,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     hay_inf = True
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
-                           
-                            if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.") 
-
+                            
+                            if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.")
             # ======================================================================
             # C) RECOMENDACIONES POR MATERIAS (NUEVA SECCIÓN DETALLADA)
             # ======================================================================
