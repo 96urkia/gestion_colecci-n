@@ -337,8 +337,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">📚 Analizador Interactivo de Fondos</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Herramienta de soporte para expurgo, gestión de colecciones y análisis estratégico</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">📚 Gestión de la colección</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Herramienta para conocer mejor la colección</div>', unsafe_allow_html=True)
 
 # ==========================================
 # PANEL LATERAL (SIDEBAR)
