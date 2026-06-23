@@ -19,21 +19,26 @@ if 'resultado' not in st.session_state:
 # CONFIGURACIÓN DE BASE DE DATOS
 # ==========================================
 DB_PATH = "gestion_coleccion.db"
-DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=1"
+# 1. CAMBIO CLAVE: Cambiamos dl=0 por dl=1 al final de la URL para forzar la descarga directa del binario (.db)
+DB_URL = "https://www.dropbox.com/scl/fi/zlhw2qkfpebtvzaimxto1/bibliotecas_navarra2.db?rlkey=fg46liauy6omsq3dkz4gnn5pk&st=jr3xe9k4&dl=1"
 
 def asegurar_base_de_datos():
     """Maneja la descarga del archivo en disco. 
-    No se cachea con Streamlit porque ya valida la existencia del archivo."""
+    Limpia archivos HTML corruptos previos y descarga el archivo SQLite real."""
     debe_descargar = False
+    
     if not os.path.exists(DB_PATH):
         debe_descargar = True
     elif os.path.getsize(DB_PATH) < 10000:  
+        # 2. DETECCIÓN: Si el archivo mide menos de 10KB, es el texto HTML de la vista previa vieja.
+        # Lo eliminamos para que no interfiera con SQLite.
         os.remove(DB_PATH)  
         debe_descargar = True
 
     if debe_descargar:
         with st.spinner("Descargando base de datos de la colección (500MB)... Esto puede tardar un minuto la primera vez."):
             try:
+                # Al ir con dl=1, urlretrieve descargará los ~500MB reales directamente al disco
                 urllib.request.urlretrieve(DB_URL, DB_PATH)
                 st.toast("¡Base de datos descargada con éxito!", icon="📥")
                 return True
@@ -41,6 +46,16 @@ def asegurar_base_de_datos():
                 st.error(f"Error crítico al descargar la base de datos desde Dropbox: {e}")
                 return False
     return True
+
+# ==========================================
+# EJECUCIÓN DE LA VERIFICACIÓN
+# ==========================================
+# Llamamos a la función antes de crear cualquier conexión 'conn = sqlite3.connect(...)'
+if asegurar_base_de_datos():
+    conn = sqlite3.connect(DB_PATH)
+else:
+    conn = None
+    st.error("No se pudo establecer la conexión porque falló la preparación del archivo .db")
 
 @st.cache_resource
 def obtener_conexion_db():
@@ -103,7 +118,67 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
+import pandas as pd
 
+def obtener_recomendaciones_por_materia_avanzada(conexion, biblioteca, patron_regex, anios, min_ejemplares, limite):
+    """
+    Extrae recomendaciones utilizando expresiones regulares directas en SQLite
+    para filtrar las materias del catálogo.
+    """
+    anio_actual = 2026
+    anio_corte = anio_actual - anios
+
+    try:
+        # Registrar la función REGEXP de Python en SQLite (ignora mayúsculas/minúsculas)
+        conexion.create_function(
+            "REGEXP", 
+            2, 
+            lambda expr, item: bool(re.search(expr, str(item), re.IGNORECASE)) if item else False
+        )
+        
+        # Consulta utilizando el operador REGEXP en la subconsulta de materias
+        query = """
+            SELECT 
+                c.id_sistema, 
+                c.titulo, 
+                c.autor, 
+                c.editorial, 
+                c.anio, 
+                c.cdu, 
+                c.isbn, 
+                c.materias, 
+                c.ejemplares, 
+                c.bibliotecas
+            FROM catalogo c
+            WHERE c.anio >= ?
+              AND c.ejemplares >= ?
+              
+              -- Filtrado avanzado mediante expresión regular
+              AND c.id_sistema IN (
+                  SELECT id_sistema 
+                  FROM materias 
+                  WHERE materia REGEXP ?
+              )
+              
+              -- Exclusión de los fondos de tu centro
+              AND c.id_sistema NOT IN (
+                  SELECT id_sistema 
+                  FROM inventario_centros 
+                  WHERE codigo_biblioteca = ?
+              )
+              
+            ORDER BY c.ejemplares DESC
+            LIMIT ?
+        """
+        
+        parametros = (anio_corte, min_ejemplares, patron_regex, biblioteca, limite)
+        df_resultado = pd.read_sql_query(query, conexion, params=parametros)
+        return df_resultado
+        
+    except Exception as e:
+        print(f"Error en la consulta analítica por materias: {e}")
+        return pd.DataFrame()
+        
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
 # ==========================================
@@ -660,9 +735,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     # BLOQUE 2: RECOMENDACIONES DE COMPRA
     # ==========================================
     with pestana_compras:
-        subtab_rec_gen, subtab_rec_cdu = st.tabs([
+        subtab_rec_gen, subtab_rec_cdu, subtab_rec_materias = st.tabs([
             "🌐 A) Recomendaciones Generales", 
-            "📚 B) Recomendaciones por CDU"
+            "📚 B) Recomendaciones por CDU",
+            "🎯 C) Recomendaciones por Materias" 
         ])
         
         # A) RECOMENDACIONES GENERALES
@@ -681,10 +757,12 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 else:
                     st.info("No se encontraron recomendaciones pendientes.")
 
+      # ------------------------------------------
         # B) RECOMENDACIONES POR CDU (CON REGLAS ESTRICTAS DE FILTRADO ANTI-RUIDO)
+        # ------------------------------------------
         with subtab_rec_cdu:
             st.subheader("🎯 Sugerencias de Adquisición por CDU")
-           
+            
             if conn is None:
                 st.error("No hay conexión activa con la base de datos.")
             else:
@@ -694,7 +772,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 with col_f2:
                     anio_minimo = st.number_input("Año mínimo publicación:", min_value=1800, max_value=2026, value=2015, key="a_cdu")
 
-                # Nueva caja de búsqueda libre por CDU
+                # Caja de búsqueda libre por CDU
                 busqueda_cdu = st.text_input(
                     "⌨️ Filtrar por CDU específica (Soporta comodines como `*`):",
                     value="",
@@ -719,7 +797,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
                 HAVING id_red_bibliotecas > 0
                 """
-               
+                
                 with st.spinner("Modelando el embudo de categorías de la Red..."):
                     df_raw_cdu = pd.read_sql_query(query_cdu, conn, params=[biblioteca, int(anio_minimo)])
 
@@ -768,11 +846,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 return None, None
                             if cdu.startswith("821"):
                                 return "Adultos", "Ficción"
-                           
+                            
                             m = re.match(r'^(\d)', cdu)
                             if m:
                                 digito = m.group(1)
-                                # Se incluye explícitamente CDU 3 y se descarta CDU 4 por inexistencia
                                 if digito in ['0', '1', '2', '3', '5', '6', '7', '8', '9']:
                                     return "Adultos", f"CDU {digito}"
                             return None, None
@@ -780,7 +857,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         res_eval = df_raw_cdu.apply(clasificar_libro, axis=1)
                         df_raw_cdu["subtab_destino"] = [r[0] for r in res_eval]
                         df_raw_cdu["categoria_final"] = [r[1] for r in res_eval]
-                       
+                        
                         # Eliminamos el ruido no clasificado
                         df_raw_cdu = df_raw_cdu[df_raw_cdu["subtab_destino"].notna()].copy()
                         df_raw_cdu = df_raw_cdu.sort_values("id_red_bibliotecas", ascending=False)
@@ -796,7 +873,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 "CDU 2": "📂 CDU 2 - Religión / Teología",
                                 "CDU 3": "📂 CDU 3 - Ciencias Sociales / Economía",
                                 "CDU 5": "📂 CDU 5 - Ciencias Puras / Naturales",
-                                "CDU 6": "📂 CDU 6 - Ciencias Aplicadas / Tecnología",
+                                "CDU 6": "📂 CDU 6 - Ciencias Aplicadas / Technology",
                                 "CDU 7": "📂 CDU 7 - Bellas Artes / Deportes",
                                 "CDU 8": "📂 CDU 8 - Lingüística / Literatura (Excl. Narrativa)",
                                 "CDU 9": "📂 CDU 9 - Geografía / Historia"
@@ -828,7 +905,168 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     hay_inf = True
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
-                           
-                            if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.") 
+                            
+                            if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.")
 
+            # ======================================================================
+            # C) RECOMENDACIONES POR MATERIAS (BÚSQUEDA POR DESCRIPTOR TEMÁTICO)
+            # ======================================================================
+            with subtab_rec_materias:
+                st.subheader("📝 Análisis de Títulos por Materias Únicas")
+                st.markdown("Consulta qué libros de una temática concreta triunfan en la Red de Navarra pero faltan en tu centro.")
+                
+                if conn is None:
+                    st.error("No hay conexión activa con la base de datos.")
+                else:
+                    # Selector del método de entrada
+                    modo_busqueda = st.radio(
+                        "🛠️ Elige el método de búsqueda de materias:",
+                        ["Selector Jerárquico asistido", "Búsqueda avanzada (Texto libre con comodines)"],
+                        horizontal=True,
+                        key="modo_busqueda_materias"
+                    )
+                    
+                    # Inicialización de las variables que enviaremos al motor de búsqueda
+                    patron_final_regex = ".*"
+                    texto_para_mostrar = ""
 
+                    if modo_busqueda == "Selector Jerárquico asistido":
+                        try:
+                            query_lista_materias = "SELECT DISTINCT materia FROM materias WHERE materia IS NOT NULL AND materia != ''"
+                            df_lista_m = pd.read_sql_query(query_lista_materias, conn)
+                            
+                            # Normalización de separadores MARC21
+                            df_lista_m['materia_limpia'] = df_lista_m['materia'].str.replace(r'\s*-?\s*--\s*', ' -- ', regex=True)
+                            
+                            # Expandir dinámicamente según las subdivisiones reales en la BD
+                            df_niveles_temp = df_lista_m['materia_limpia'].str.split(' -- ', expand=True)
+                            
+                            # Asegurar un mínimo de 3 columnas para evitar fallos de índice si la BD es muy simple
+                            for i in range(3):
+                                if i not in df_niveles_temp.columns:
+                                    df_niveles_temp[i] = None
+                                    
+                            # PODA SEGURA: nos quedamos estrictamente con los 3 primeros niveles
+                            df_niveles = df_niveles_temp.iloc[:, :3].copy()
+                            df_niveles.columns = ['Nivel_1', 'Nivel_2', 'Nivel_3']
+                            
+                        except Exception as e:
+                            st.error(f"Error al procesar el árbol de materias: {e}")
+                            df_niveles = pd.DataFrame(columns=['Nivel_1', 'Nivel_2', 'Nivel_3'])
+
+                        # Interfaz de columnas para el árbol jerárquico
+                        st.markdown("##### 🏷️ Selector en Cascada")
+                        col_n1, col_n2, col_n3 = st.columns(3)
+
+                        with col_n1:
+                            opciones_n1 = sorted([str(m) for m in df_niveles['Nivel_1'].dropna().unique() if m])
+                            sel_n1 = st.selectbox("1️⃣ Materia Principal:", options=opciones_n1, key="mat_n1")
+
+                        with col_n2:
+                            if sel_n1:
+                                filtro_n1 = df_niveles[df_niveles['Nivel_1'] == sel_n1]
+                                opciones_n2 = sorted([str(m) for m in filtro_n1['Nivel_2'].dropna().unique() if m])
+                                sel_n2 = st.selectbox("2️⃣ Subdivisión 1 (Opcional):", options=["(Todas)"] + opciones_n2, key="mat_n2") if opciones_n2 else "(Todas)"
+                            else:
+                                sel_n2 = "(Todas)"
+
+                        with col_n3:
+                            if sel_n1 and sel_n2 != "(Todas)":
+                                filtro_n2 = filtro_n1[filtro_n1['Nivel_2'] == sel_n2]
+                                opciones_n3 = sorted([str(m) for m in filtro_n2['Nivel_3'].dropna().unique() if m])
+                                sel_n3 = st.selectbox("3️⃣ Subdivisión 2 (Opcional):", options=["(Todas)"] + opciones_n3, key="mat_n3") if opciones_n3 else "(Todas)"
+                            else:
+                                sel_n3 = "(Todas)"
+
+                        # Traducir la selección jerárquica a un patrón Regex seguro protegiendo contra None
+                        if sel_n1:
+                            componentes = [re.escape(sel_n1)]
+                            if sel_n2 != "(Todas)":
+                                componentes.append(re.escape(sel_n2))
+                                if sel_n3 != "(Todas)":
+                                    componentes.append(re.escape(sel_n3))
+                            
+                            patron_final_regex = ".*".join(componentes)
+                            texto_para_mostrar = " ➔ ".join([sel_n1, sel_n2, sel_n3]).replace(" ➔ (Todas)", "")
+                        else:
+                            patron_final_regex = ".*"
+                            texto_para_mostrar = ""
+
+                    else:
+                        # INTERFAZ DE TEXTO LIBRE AVANZADO
+                        st.markdown("##### 🔍 Buscador Experto por Descriptores")
+                        texto_libre = st.text_input(
+                            "Introduce el término o expresión a buscar:",
+                            placeholder='Ejemplos: abogad*s  o  "Guerra civil española"',
+                            help='Sintaxis admitida:\n- Usa comillas "" para buscar la frase exacta en ese orden.\n- Usa un asterisco * como comodín para cualquier letra intermedia.',
+                            key="input_texto_libre_materias"
+                        )
+                        
+                        texto_para_mostrar = texto_libre
+                        
+                        # PARSER DE SINTAXIS PERSONALIZADA A REGEX
+                        if texto_libre:
+                            texto_libre = texto_libre.strip()
+                            # Caso A: Cadena exacta entre comillas
+                            if texto_libre.startswith('"') and texto_libre.endswith('"'):
+                                frase_literal = texto_libre[1:-1]
+                                patron_final_regex = re.escape(frase_literal)
+                            # Caso B: Uso de comodines asterisco
+                            else:
+                                # Fragmentamos por el asterisco, escapamos el texto plano y unimos con el comodín .* de regex
+                                partes = [re.escape(p) for p in texto_libre.split('*')]
+                                patron_final_regex = ".*".join(partes)
+                        else:
+                            patron_final_regex = ".*"
+
+                    # Bloque de parámetros numéricos comunes
+                    col_m1, col_m2 = st.columns(2)
+                    with col_m1:
+                        anios_mat = st.number_input("📅 Antigüedad máxima (Años transcurridos):", min_value=1, max_value=40, value=2, key="anios_m_in")
+                    with col_m2:
+                        min_ejemplares_mat = st.number_input("📚 Mínimo ejemplares en la Red:", min_value=1, max_value=100, value=3, key="min_ej_m_in")
+                        limite_mat = st.number_input("🔢 Límite máximo de sugerencias:", min_value=5, max_value=500, value=100, step=5, key="limite_m_in")
+
+                    # Ejecución de la búsqueda
+                    if st.button("🔍 Extraer y Filtrar por Materias", type="primary", use_container_width=True):
+                        if modo_busqueda == "Búsqueda avanzada (Texto libre con comodines)" and not texto_libre.strip():
+                            st.warning("⚠️ Por favor, introduce algún término antes de iniciar la búsqueda por texto libre.")
+                        elif modo_busqueda == "Selector Jerárquico asistido" and not texto_para_mostrar:
+                            st.warning("⚠️ Por favor, selecciona una materia válida antes de ejecutar el análisis.")
+                        else:
+                            with st.spinner(f"Analizando registros bajo el patrón conceptual: '{texto_para_mostrar}'..."):
+                                
+                                df_mat_resultado = obtener_recomendaciones_por_materia_avanzada(
+                                    conexion=conn,
+                                    biblioteca=biblioteca_seleccionada,
+                                    patron_regex=patron_final_regex,
+                                    anios=anios_mat,
+                                    min_ejemplares=min_ejemplares_mat,
+                                    limite=limite_mat
+                                )
+                                
+                                if not df_mat_resultado.empty:
+                                    df_print = df_mat_resultado[[
+                                        "id_sistema", "titulo", "autor", "editorial", "anio", "cdu", "isbn", "materias", "ejemplares", "bibliotecas"
+                                    ]].copy()
+                                    
+                                    df_print.columns = [
+                                        "ID Sistema", "Título", "Autor", "Editorial", "Año", "CDU", "ISBN", "Materias", "Ejemplares Red", "Bibliotecas Red"
+                                    ]
+                                    
+                                    st.success(f"¡Éxito! Encontrados {len(df_print)} títulos relevantes ausentes en tu centro para: '{texto_para_mostrar}'")
+                                    st.caption(f" *Filtro técnico aplicado en base de datos:* `{patron_final_regex}`")
+                                    st.dataframe(df_print, use_container_width=True, hide_index=True)
+                                    
+                                    csv_materias = df_print.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                                    nombre_archivo_limpio = re.sub(r'[^a-zA-Z0-9_]', '', texto_para_mostrar.lower().replace(" ", "_"))
+                                    
+                                    st.download_button(
+                                        label=f"📥 Descargar Recomendaciones de '{texto_para_mostrar}' (CSV)",
+                                        data=csv_materias,
+                                        file_name=f"rec_materias_{nombre_archivo_limpio}.csv",
+                                        mime="text/csv",
+                                        key="btn_dl_mat"
+                                    )
+                                else:
+                                    st.info(f"ℹ️ No se detectan títulos ausentes que coincidan con la expresión '{texto_para_mostrar}' bajo los parámetros seleccionados.")
