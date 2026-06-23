@@ -120,61 +120,36 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
 
 import pandas as pd
 
-def obtener_recomendaciones_por_materia(conexion, biblioteca, materia_seleccionada, anios, min_ejemplares, limite):
-    """
-    Consulta la base de datos de la Red para extraer libros de una materia concreta
-    que cumplan los criterios de antigüedad y stock mínimo, excluyendo los del centro actual.
-    """
-    # Calculamos el año de corte basándonos en el año actual (2026)
-    anio_actual = 2026
-    anio_corte = anio_actual - anios
-
-    # NOTA: Ajusta los nombres de las tablas ('catalogo' e 'inventario_centros') 
-    # según coincidan exactamente con el diseño de tu base de datos.
-    query = """
-        SELECT 
-            c.id_sistema, 
-            c.titulo, 
-            c.autor, 
-            c.editorial, 
-            c.anio, 
-            c.cdu, 
-            c.isbn, 
-            c.materias, 
-            c.ejemplares, 
-            c.bibliotecas
+def obtener_recomendaciones_por_materia(conexion, biblioteca, materias_seleccionadas, anios, min_ejemplares, limite):
+    anio_corte = 2026 - anios
+    
+    # Generamos tantos signos de interrogación como elementos tenga nuestra lista mapeada
+    placeholders = ",".join(["?"] * len(materias_seleccionadas))
+    
+    query = f"""
+        SELECT c.id_sistema, c.titulo, c.autor, c.editorial, c.anio, c.cdu, c.isbn, c.materias, c.ejemplares, c.bibliotecas
         FROM catalogo c
         WHERE c.anio >= ?
           AND c.ejemplares >= ?
-          
-          -- 1. Filtrar por la materia seleccionada cruzando con tu tabla 'materias'
           AND c.id_sistema IN (
               SELECT id_sistema 
               FROM materias 
-              WHERE materia = ?
+              WHERE materia IN ({placeholders})
           )
-          
-          -- 2. EXCLUSIÓN: Eliminar los títulos que ya posee tu biblioteca local
-          -- (Asumiendo una tabla intermedia de inventario por centros)
           AND c.id_sistema NOT IN (
-              SELECT id_sistema 
-              FROM inventario_centros 
-              WHERE codigo_biblioteca = ?
+              SELECT id_sistema FROM inventario_centros WHERE codigo_biblioteca = ?
           )
-          
         ORDER BY c.ejemplares DESC
         LIMIT ?
     """
     
+    # Combinamos todos los parámetros en el orden correcto para la tupla de ejecución de SQLite
+    parametros = [anio_corte, min_ejemplares] + materias_seleccionadas + [biblioteca, limite]
+    
     try:
-        # Pasamos los parámetros en una tupla ordenada para que el driver de la BD los limpie de forma segura
-        parametros = (anio_corte, min_ejemplares, materia_seleccionada, biblioteca, limite)
-        df_resultado = pd.read_sql_query(query, conexion, params=parametros)
-        return df_resultado
-        
+        return pd.read_sql_query(query, conexion, params=parametros)
     except Exception as e:
-        # Registramos el error en la consola y retornamos un DataFrame vacío para controlar el flujo
-        print(f"Error al extraer recomendaciones por materia: {e}")
+        print(f"Error en consulta: {e}")
         return pd.DataFrame()
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
@@ -915,43 +890,101 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 if conn is None:
                     st.error("No hay conexión activa con la base de datos.")
                 else:
-                    # 1. Cargar el listado REAL de materias desde tu tabla 'materias'
+                    # 1. CARGAR Y NORMALIZAR EL LISTADO DE MATERIAS
                     try:
-                        query_lista_materias = "SELECT DISTINCT materia FROM materias WHERE materia IS NOT NULL AND materia != '' ORDER BY materia ASC"
+                        # Traemos el listado tal cual está en la base de datos
+                        query_lista_materias = "SELECT DISTINCT materia FROM materias WHERE materia IS NOT NULL AND materia != ''"
                         df_lista_m = pd.read_sql_query(query_lista_materias, conn)
-                        lista_materias = df_lista_m["materia"].dropna().tolist()
-                    except Exception as e:
-                        st.error(f"Error al leer la tabla de materias: {e}")
-                        lista_materias = ["Error de carga"]
-
-                    col_m1, col_m2 = st.columns(2)
-                    with col_m1:
-                        texto_materia = st.selectbox(
-                            "📝 Selecciona o escribe la materia:",
-                            options=lista_materias,
-                            index=0,
-                            help="Puedes escribir directamente para filtrar las materias disponibles en la Red.",
-                            key="materia_select_in"
-                        )
                         
-                        anios_mat = st.number_input("📅 Antigüedad máxima (Años transcurridos):", min_value=1, max_value=40, value=2, key="anios_m_in")
-                    
-                    with col_m2:
-                        min_ejemplares_mat = st.number_input("📚 Mínimo ejemplares en la Red:", min_value=1, max_value=100, value=3, key="min_ej_m_in")
-                        limite_mat = st.number_input("🔢 Límite máximo de sugerencias:", min_value=5, max_value=500, value=100, step=5, key="limite_m_in")
-                    
-                    if st.button("🔍 Extraer y Filtrar por Materias", type="primary", use_container_width=True):
-                        # Evitar que busque si hubo error al cargar la lista
-                        if texto_materia == "Error de carga":
-                            st.warning("⚠️ Corrige el error de base de datos antes de buscar.")
-                        else:
-                            with st.spinner(f"Filtrando libros en la Red sobre '{texto_materia}'..."):
+                        # Homogeneizamos cualquier variante de guiones (- --,  -- , --) en un único " -- " estándar
+                        df_lista_m['materia_limpia'] = df_lista_m['materia'].str.replace(r'\s*-?\s*--\s*', ' -- ', regex=True).str.strip()
+                        
+                        # Dividimos la cadena limpia en tres columnas jerárquicas
+                        df_niveles = df_lista_m['materia_limpia'].str.split(' -- ', expand=True)
+                        
+                        # Aseguramos la existencia de al menos 3 columnas para evitar IndexError
+                        for i in range(3):
+                            if i not in df_niveles.columns:
+                                df_niveles[i] = None
                                 
-                                # Llamada corregida con el parámetro 'materia_seleccionada'
+                        df_lista_m['Nivel_1'] = df_niveles[0].str.strip()
+                        df_lista_m['Nivel_2'] = df_niveles[1].str.strip()
+                        df_lista_m['Nivel_3'] = df_niveles[2].str.strip()
+                        
+                        error_carga = False
+                    except Exception as e:
+                        st.error(f"Error al procesar la estructura de materias: {e}")
+                        error_carga = True
+
+                    if not error_carga:
+                        # 2. INTERFAZ DE USUARIO: 3 CAJAS EN CASCADA
+                        st.markdown("##### 🏷️ Selector Jerárquico del Descriptor Temático")
+                        col_c1, col_c2, col_c3 = st.columns(3)
+                        
+                        with col_c1:
+                            # Primer nivel: Materia principal (Ej: "Conflicto árabe-israelí", "Abogados")
+                            opciones_n1 = sorted([str(x) for x in df_lista_m['Nivel_1'].dropna().unique() if x])
+                            sel_n1 = st.selectbox("1️⃣ Materia Principal:", options=opciones_n1, key="mat_n1_in")
+                        
+                        with col_c2:
+                            # Filtrar las opciones del segundo nivel basándonos en la elección del primero
+                            df_filtro_n1 = df_lista_m[df_lista_m['Nivel_1'] == sel_n1]
+                            opciones_n2 = sorted([str(x) for x in df_filtro_n1['Nivel_2'].dropna().unique() if x])
+                            
+                            if opciones_n2:
+                                sel_n2 = st.selectbox("2️⃣ Subdivisión (Opcional):", options=["(Todas)"] + opciones_n2, key="mat_n2_in")
+                            else:
+                                sel_n2 = "(Todas)"
+                                st.selectbox("2️⃣ Subdivisión:", options=["(Sin subdivisiones)"], disabled=True, key="mat_n2_dis")
+                        
+                        with col_c3:
+                            # Filtrar el tercer nivel si se ha concretado el segundo
+                            if sel_n2 != "(Todas)":
+                                df_filtro_n2 = df_filtro_n1[df_filtro_n1['Nivel_2'] == sel_n2]
+                                opciones_n3 = sorted([str(x) for x in df_filtro_n2['Nivel_3'].dropna().unique() if x])
+                            else:
+                                opciones_n3 = []
+                                
+                            if opciones_n3:
+                                sel_n3 = st.selectbox("3️⃣ Subdivisión 2 (Opcional):", options=["(Todas)"] + opciones_n3, key="mat_n3_in")
+                            else:
+                                sel_n3 = "(Todas)"
+                                st.selectbox("3️⃣ Subdivisión 2:", options=["(Sin subdivisiones)"], disabled=True, key="mat_n3_dis")
+
+                        # 3. INTERSECCIÓN: Encontrar los términos originales "sucios" de la DB
+                        df_seleccionado = df_lista_m[df_lista_m['Nivel_1'] == sel_n1]
+                        if sel_n2 != "(Todas)":
+                            df_seleccionado = df_seleccionado[df_seleccionado['Nivel_2'] == sel_n2]
+                            if sel_n3 != "(Todas)":
+                                df_seleccionado = df_seleccionado[df_seleccionado['Nivel_3'] == sel_n3]
+                        
+                        # Generamos la lista de strings reales (sucios) correspondientes a la selección limpia
+                        lista_materias_raw = df_seleccionado['materia'].unique().tolist()
+
+                        # Mostrar un pequeño texto informativo con lo que se va a buscar internamente
+                        texto_visual_seleccion = sel_n1
+                        if sel_n2 != "(Todas)": texto_visual_seleccion += f" ➔ {sel_n2}"
+                        if sel_n3 != "(Todas)": texto_visual_seleccion += f" ➔ {sel_n3}"
+                        st.caption(f"**Búsqueda activa:** `{texto_visual_seleccion}` *(mapeado a {len(lista_materias_raw)} variantes en la base de datos)*")
+
+                        # 4. CONFIGURACIÓN DE PARÁMETROS NUMÉRICOS
+                        st.markdown("---")
+                        col_m1, col_m2 = st.columns(2)
+                        with col_m1:
+                            anios_mat = st.number_input("📅 Antigüedad máxima (Años transcurridos):", min_value=1, max_value=40, value=2, key="anios_m_in")
+                        with col_m2:
+                            min_ejemplares_mat = st.number_input("📚 Mínimo ejemplares en la Red:", min_value=1, max_value=100, value=3, key="min_ej_m_in")
+                            limite_mat = st.number_input("🔢 Límite máximo de sugerencias:", min_value=5, max_value=500, value=100, step=5, key="limite_m_in")
+                        
+                        # 5. BOTÓN DE EJECUCIÓN Y RENDERIZADO DE RESULTADOS
+                        if st.button("🔍 Extraer y Filtrar por Materias", type="primary", use_container_width=True):
+                            with st.spinner(f"Analizando títulos de la Red para la selección temática..."):
+                                
+                                # Pasamos la lista de cadenas reales exactas que recopilamos
                                 df_mat_resultado = obtener_recomendaciones_por_materia(
                                     conexion=conn,
                                     biblioteca=biblioteca_seleccionada,
-                                    materia_seleccionada=texto_materia,
+                                    materias_seleccionadas=lista_materias_raw,  # <-- Enviamos la lista completa
                                     anios=anios_mat,
                                     min_ejemplares=min_ejemplares_mat,
                                     limite=limite_mat
@@ -966,18 +999,18 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                         "ID Sistema", "Título", "Autor", "Editorial", "Año", "CDU", "ISBN", "Materias", "Ejemplares Red", "Bibliotecas Red"
                                     ]
                                     
-                                    st.success(f"¡Éxito! Encontrados {len(df_print)} libros sobre '{texto_materia}' relevantes ausentes en tu centro.")
+                                    st.success(f"¡Éxito! Encontrados {len(df_print)} libros relevantes ausentes en tu centro.")
                                     st.dataframe(df_print, use_container_width=True, hide_index=True)
                                     
                                     csv_materias = df_print.to_csv(index=False, sep=';', encoding="utf-8-sig")
-                                    nombre_archivo_limpio = texto_materia.lower().replace(" ", "_").replace("/", "-")
+                                    nombre_archivo_limpio = sel_n1.lower().replace(" ", "_").replace("/", "-")
                                     
                                     st.download_button(
-                                        label=f"📥 Descargar Recomendaciones de '{texto_materia}' (CSV)",
+                                        label=f"📥 Descargar Recomendaciones (CSV)",
                                         data=csv_materias,
                                         file_name=f"rec_materias_{nombre_archivo_limpio}.csv",
                                         mime="text/csv",
                                         key="btn_dl_mat"
                                     )
                                 else:
-                                    st.info(f"ℹ️ No se detectan títulos ausentes con el descriptor temático '{texto_materia}' bajo los filtros actuales.")
+                                    st.info(f"ℹ️ No se detectan títulos ausentes para esta selección bajo los filtros actuales.")
