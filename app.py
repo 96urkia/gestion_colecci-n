@@ -755,8 +755,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             if conn is None:
                 st.error("No hay conexión activa con la base de datos.")
             else:
-                # Dejamos solo el control de año de publicación ocupando el ancho completo
-                anio_minimo = st.number_input("Año mínimo publicación:", min_value=1800, max_value=2026, value=2015, key="a_cdu")
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    limite_cdu = st.number_input("Máximo por subcategoría:", min_value=1, max_value=100, value=10, key="l_cdu")
+                with col_f2:
+                    anio_minimo = st.number_input("Año mínimo publicación:", min_value=1800, max_value=2026, value=2015, key="a_cdu")
 
                 # Caja de búsqueda libre por CDU
                 busqueda_cdu = st.text_input(
@@ -866,8 +869,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             }
                             hay_ad = False
                             for k, titulo_ex in menus_adultos.items():
-                                # Se quita el .head() para mostrar el desglose completo
-                                g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Adultos") & (df_raw_cdu["categoria_final"] == k)]
+                                # Recuperamos el límite dinámico por sección
+                                g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Adultos") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
                                 if not g.empty:
                                     hay_ad = True
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
@@ -887,8 +890,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             }
                             hay_inf = False
                             for k, titulo_ex in menus_infantil.items():
-                                # Se quita el .head() para mostrar el desglose completo
-                                g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Infantil") & (df_raw_cdu["categoria_final"] == k)]
+                                # Recuperamos el límite dinámico por sección
+                                g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Infantil") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
                                 if not g.empty:
                                     hay_inf = True
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
