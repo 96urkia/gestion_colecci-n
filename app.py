@@ -319,7 +319,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("📖 Total Volúmenes", f"{total_docs:,}")
     m2.metric("🪪 Índice de Circulación", f"{pct_prestados:.1f}%")
-    m3.metric("📅 Edad Media del Fondo", f"{int(edad_media)} u." if not np.isnan(edad_media) else "N/A")
+    m3.metric("📅 Edad Media del Fondo", f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A")
     m4.metric("👥 Docs por Habitante", f"{docs_por_habitante:.2f}")
    
     if huerfanos > 0:
