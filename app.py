@@ -746,7 +746,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 else:
                     st.info("No se encontraron recomendaciones pendientes.")
 
-        # ------------------------------------------
+      # ------------------------------------------
         # B) RECOMENDACIONES POR CDU (CON REGLAS ESTRICTAS DE FILTRADO ANTI-RUIDO)
         # ------------------------------------------
         with subtab_rec_cdu:
@@ -862,14 +862,13 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 "CDU 2": "📂 CDU 2 - Religión / Teología",
                                 "CDU 3": "📂 CDU 3 - Ciencias Sociales / Economía",
                                 "CDU 5": "📂 CDU 5 - Ciencias Puras / Naturales",
-                                "CDU 6": "📂 CDU 6 - Ciencias Aplicadas / Tecnología",
+                                "CDU 6": "📂 CDU 6 - Ciencias Aplicadas / Technology",
                                 "CDU 7": "📂 CDU 7 - Bellas Artes / Deportes",
                                 "CDU 8": "📂 CDU 8 - Lingüística / Literatura (Excl. Narrativa)",
                                 "CDU 9": "📂 CDU 9 - Geografía / Historia"
                             }
                             hay_ad = False
                             for k, titulo_ex in menus_adultos.items():
-                                # Recuperamos el límite dinámico por sección
                                 g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Adultos") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
                                 if not g.empty:
                                     hay_ad = True
@@ -890,7 +889,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                             }
                             hay_inf = False
                             for k, titulo_ex in menus_infantil.items():
-                                # Recuperamos el límite dinámico por sección
                                 g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Infantil") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
                                 if not g.empty:
                                     hay_inf = True
@@ -898,6 +896,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
                             
                             if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.")
+
             # ======================================================================
             # C) RECOMENDACIONES POR MATERIAS (NUEVA SECCIÓN DETALLADA)
             # ======================================================================
@@ -912,7 +911,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     with col_m1:
                         cdu_materia = st.text_input("📂 Prefijo CDU a analizar:", value="32", help="Ej: 32 para Política, 004 para Informática, 94 para Historia.", key="cdu_m_in").strip()
                         anios_mat = st.number_input("📅 Antigüedad máxima (Años transcurridos):", min_value=1, max_value=40, value=2, key="anios_m_in")
-                    with col_f2: # Reutilizamos espaciado visual coordinado
+                    with col_m2:  # <-- CORREGIDO: Cambiado col_f2 por col_m2
                         min_ejemplares_mat = st.number_input("📚 Mínimo ejemplares en la Red:", min_value=1, max_value=100, value=3, key="min_ej_m_in")
                         limite_mat = st.number_input("🔢 Límite máximo de sugerencias:", min_value=5, max_value=500, value=100, step=5, key="limite_m_in")
                     
@@ -931,7 +930,6 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                 )
                                 
                                 if not df_mat_resultado.empty:
-                                    # Seleccionamos y renombramos columnas de cara al usuario final
                                     df_print = df_mat_resultado[[
                                         "id_sistema", "titulo", "autor", "editorial", "anio", "cdu", "isbn", "materias", "ejemplares", "bibliotecas"
                                     ]].copy()
@@ -941,11 +939,8 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     ]
                                     
                                     st.success(f"¡Éxito! Encontrados {len(df_print)} libros relevantes ausentes en tu centro.")
-                                    
-                                    # Visualizador interactivo de Streamlit
                                     st.dataframe(df_print, use_container_width=True, hide_index=True)
                                     
-                                    # Botón de descarga CSV integrado compatible con Excel (Encoding utf-8-sig)
                                     csv_materias = df_print.to_csv(index=False, sep=';', encoding="utf-8-sig")
                                     st.download_button(
                                         label=f"📥 Descargar Recomendaciones CDU {cdu_materia} (CSV)",
