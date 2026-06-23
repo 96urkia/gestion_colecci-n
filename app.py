@@ -118,64 +118,64 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
+import pandas as pd
+
 def obtener_recomendaciones_por_materia(conexion, biblioteca, materia_seleccionada, anios, min_ejemplares, limite):
-    import datetime
-    import pandas as pd
-    
-    anio_minimo = datetime.datetime.now().year - anios
-    
-    consulta = """
-    SELECT
-        l.id_sistema,
-        l.titulo,
-        l.autor,
-        l.editorial,
-        l.anio,
-        l.cdu,
-        l.isbn,
-        
-        (
-            SELECT GROUP_CONCAT(materia, ' | ') 
-            FROM (SELECT DISTINCT materia FROM materias WHERE id_sistema = l.id_sistema)
-        ) AS materias,
+    """
+    Consulta la base de datos de la Red para extraer libros de una materia concreta
+    que cumplan los criterios de antigüedad y stock mínimo, excluyendo los del centro actual.
+    """
+    # Calculamos el año de corte basándonos en el año actual (2026)
+    anio_actual = 2026
+    anio_corte = anio_actual - anios
 
-        COUNT(DISTINCT e.id) AS ejemplares,
-        COUNT(DISTINCT e.biblioteca) AS bibliotecas
-
-    FROM libros l
-    JOIN ejemplares e ON l.id_sistema = e.id_sistema
-
-    WHERE
-        CAST(SUBSTR(l.anio,1,4) AS INTEGER) >= ?
-        
-        -- Buscamos libros que tengan exactamente la materia elegida
-        AND l.id_sistema IN (SELECT DISTINCT id_sistema FROM materias WHERE materia = ?)
-        
-        AND l.id_sistema NOT IN (
-            SELECT DISTINCT id_sistema
-            FROM ejemplares
-            WHERE UPPER(biblioteca) LIKE ?
-        )
-
-    GROUP BY l.id_sistema
-    HAVING ejemplares >= ?
-    ORDER BY bibliotecas DESC, ejemplares DESC
-    LIMIT ?
+    # NOTA: Ajusta los nombres de las tablas ('catalogo' e 'inventario_centros') 
+    # según coincidan exactamente con el diseño de tu base de datos.
+    query = """
+        SELECT 
+            c.id_sistema, 
+            c.titulo, 
+            c.autor, 
+            c.editorial, 
+            c.anio, 
+            c.cdu, 
+            c.isbn, 
+            c.materias, 
+            c.ejemplares, 
+            c.bibliotecas
+        FROM catalogo c
+        WHERE c.anio >= ?
+          AND c.ejemplares >= ?
+          
+          -- 1. Filtrar por la materia seleccionada cruzando con tu tabla 'materias'
+          AND c.id_sistema IN (
+              SELECT id_sistema 
+              FROM materias 
+              WHERE materia = ?
+          )
+          
+          -- 2. EXCLUSIÓN: Eliminar los títulos que ya posee tu biblioteca local
+          -- (Asumiendo una tabla intermedia de inventario por centros)
+          AND c.id_sistema NOT IN (
+              SELECT id_sistema 
+              FROM inventario_centros 
+              WHERE codigo_biblioteca = ?
+          )
+          
+        ORDER BY c.ejemplares DESC
+        LIMIT ?
     """
     
-    df = pd.read_sql_query(
-        consulta,
-        conexion,
-        params=(
-            anio_minimo,
-            materia_seleccionada,
-            f"%{biblioteca.upper()}%",
-            min_ejemplares,
-            limite
-        )
-    )
-    
-    return df
+    try:
+        # Pasamos los parámetros en una tupla ordenada para que el driver de la BD los limpie de forma segura
+        parametros = (anio_corte, min_ejemplares, materia_seleccionada, biblioteca, limite)
+        df_resultado = pd.read_sql_query(query, conexion, params=parametros)
+        return df_resultado
+        
+    except Exception as e:
+        # Registramos el error en la consola y retornamos un DataFrame vacío para controlar el flujo
+        print(f"Error al extraer recomendaciones por materia: {e}")
+        return pd.DataFrame()
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
 # ==========================================
