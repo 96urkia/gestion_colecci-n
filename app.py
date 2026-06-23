@@ -684,7 +684,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         # B) RECOMENDACIONES POR CDU (CON REGLAS ESTRICTAS DE FILTRADO ANTI-RUIDO)
         with subtab_rec_cdu:
             st.subheader("🎯 Sugerencias de Adquisición por CDU")
-            
+           
             if conn is None:
                 st.error("No hay conexión activa con la base de datos.")
             else:
@@ -693,6 +693,14 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     limite_cdu = st.number_input("Máximo por subcategoría:", min_value=1, max_value=100, value=10, key="l_cdu")
                 with col_f2:
                     anio_minimo = st.number_input("Año mínimo publicación:", min_value=1800, max_value=2026, value=2015, key="a_cdu")
+
+                # Nueva caja de búsqueda libre por CDU
+                busqueda_cdu = st.text_input(
+                    "⌨️ Filtrar por CDU específica (Soporta comodines como `*`):",
+                    value="",
+                    placeholder="Ej: 3* para Ciencias Sociales, 94(460)* para Historia de España, o 51*",
+                    key="b_cdu_libre"
+                ).strip().upper()
 
                 biblioteca = biblioteca_seleccionada.upper().strip()
 
@@ -711,94 +719,114 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
                 HAVING id_red_bibliotecas > 0
                 """
-                
+               
                 with st.spinner("Modelando el embudo de categorías de la Red..."):
                     df_raw_cdu = pd.read_sql_query(query_cdu, conn, params=[biblioteca, int(anio_minimo)])
 
                 if df_raw_cdu.empty:
                     st.warning("No hay recomendaciones con la configuración de años actual.")
                 else:
-                    # Lógica interna de clasificación infantil limpia
-                    def clasificar_infantil(todas_sigs):
-                        if not todas_sigs: return None
-                        sigs = [s.strip().upper() for s in str(todas_sigs).split('||') if s.strip()]
-                        for sig in sigs:
-                            match_edad = re.search(r'\b(I0|I1|I2|I3|JN)\b', sig)
-                            if match_edad: return match_edad.group(1)
-                            match_mat = re.search(r'\bI\s+([0-9])\b', sig)
-                            if match_mat: return f"I CDU {match_mat.group(1)}"
-                            match_typo = re.search(r'\bI([4-9])\b', sig)
-                            if match_typo: return f"I CDU {match_typo.group(1)}"
-                        return None
+                    # --- APLICACIÓN DEL FILTRO DE BÚSQUEDA LIBRE DE CDU ---
+                    if busqueda_cdu:
+                        if '*' in busqueda_cdu:
+                            import re
+                            # Escapamos la cadena para proteger paréntesis/puntos y cambiamos '*' por '.*'
+                            patron_escapado = re.escape(busqueda_cdu)
+                            regex_patron = patron_escapado.replace(r'\*', '.*')
+                            df_raw_cdu = df_raw_cdu[
+                                df_raw_cdu['cdu'].astype(str).str.upper().str.strip().str.match(regex_patron, na=False)
+                            ]
+                        else:
+                            # Comportamiento por defecto: "empieza por"
+                            df_raw_cdu = df_raw_cdu[
+                                df_raw_cdu['cdu'].astype(str).str.upper().str.strip().str.startswith(busqueda_cdu, na=False)
+                            ]
 
-                    # Embudo estricto de control de ruido solicitado
-                    def clasificar_libro(row):
-                        cdu = str(row["cdu"]).strip().upper()
-                        if cdu.startswith("087.5"):
-                            cat_inf = clasificar_infantil(row.get("todas_signaturas", ""))
-                            if cat_inf: return "Infantil", cat_inf
+                    # Validamos si tras el filtro de búsqueda sigue habiendo datos
+                    if df_raw_cdu.empty:
+                        st.info("ℹ️ Ninguna sugerencia de la Red coincide con el patrón de CDU introducido.")
+                    else:
+                        # Lógica interna de clasificación infantil limpia
+                        def clasificar_infantil(todas_sigs):
+                            if not todas_sigs: return None
+                            sigs = [s.strip().upper() for s in str(todas_sigs).split('||') if s.strip()]
+                            for sig in sigs:
+                                match_edad = re.search(r'\b(I0|I1|I2|I3|JN)\b', sig)
+                                if match_edad: return match_edad.group(1)
+                                match_mat = re.search(r'\bI\s+([0-9])\b', sig)
+                                if match_mat: return f"I CDU {match_mat.group(1)}"
+                                match_typo = re.search(r'\bI([4-9])\b', sig)
+                                if match_typo: return f"I CDU {match_typo.group(1)}"
+                            return None
+
+                        # Embudo estricto de control de ruido solicitado
+                        def clasificar_libro(row):
+                            cdu = str(row["cdu"]).strip().upper()
+                            if cdu.startswith("087.5"):
+                                cat_inf = clasificar_infantil(row.get("todas_signaturas", ""))
+                                if cat_inf: return "Infantil", cat_inf
+                                return None, None
+                            if cdu.startswith("821"):
+                                return "Adultos", "Ficción"
+                           
+                            m = re.match(r'^(\d)', cdu)
+                            if m:
+                                digito = m.group(1)
+                                # Se incluye explícitamente CDU 3 y se descarta CDU 4 por inexistencia
+                                if digito in ['0', '1', '2', '3', '5', '6', '7', '8', '9']:
+                                    return "Adultos", f"CDU {digito}"
                             return None, None
-                        if cdu.startswith("821"):
-                            return "Adultos", "Ficción"
-                        
-                        m = re.match(r'^(\d)', cdu)
-                        if m:
-                            digito = m.group(1)
-                            # Se incluye explícitamente CDU 3 y se descarta CDU 4 por inexistencia
-                            if digito in ['0', '1', '2', '3', '5', '6', '7', '8', '9']:
-                                return "Adultos", f"CDU {digito}"
-                        return None, None
 
-                    res_eval = df_raw_cdu.apply(clasificar_libro, axis=1)
-                    df_raw_cdu["subtab_destino"] = [r[0] for r in res_eval]
-                    df_raw_cdu["categoria_final"] = [r[1] for r in res_eval]
-                    
-                    # Eliminamos el ruido no clasificado
-                    df_raw_cdu = df_raw_cdu[df_raw_cdu["subtab_destino"].notna()].copy()
-                    df_raw_cdu = df_raw_cdu.sort_values("id_red_bibliotecas", ascending=False)
+                        res_eval = df_raw_cdu.apply(clasificar_libro, axis=1)
+                        df_raw_cdu["subtab_destino"] = [r[0] for r in res_eval]
+                        df_raw_cdu["categoria_final"] = [r[1] for r in res_eval]
+                       
+                        # Eliminamos el ruido no clasificado
+                        df_raw_cdu = df_raw_cdu[df_raw_cdu["subtab_destino"].notna()].copy()
+                        df_raw_cdu = df_raw_cdu.sort_values("id_red_bibliotecas", ascending=False)
 
-                    # Subpestañas finales internas
-                    sub_adultos, sub_infantil = st.tabs(["👨‍💼 Sección Adultos", "👶 Sección Infantil"])
+                        # Subpestañas finales internas
+                        sub_adultos, sub_infantil = st.tabs(["👨‍💼 Sección Adultos", "👶 Sección Infantil"])
 
-                    with sub_adultos:
-                        menus_adultos = {
-                            "Ficción": "📖 Ficción Adultos (821)",
-                            "CDU 0": "📂 CDU 0 - Generalidades",
-                            "CDU 1": "📂 CDU 1 - Filosofía / Psicología",
-                            "CDU 2": "📂 CDU 2 - Religión / Teología",
-                            "CDU 3": "📂 CDU 3 - Ciencias Sociales / Economía",
-                            "CDU 5": "📂 CDU 5 - Ciencias Puras / Naturales",
-                            "CDU 6": "📂 CDU 6 - Ciencias Aplicadas / Tecnología",
-                            "CDU 7": "📂 CDU 7 - Bellas Artes / Deportes",
-                            "CDU 8": "📂 CDU 8 - Lingüística / Literatura (Excl. Narrativa)",
-                            "CDU 9": "📂 CDU 9 - Geografía / Historia"
-                        }
-                        hay_ad = False
-                        for k, titulo_ex in menus_adultos.items():
-                            g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Adultos") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
-                            if not g.empty:
-                                hay_ad = True
-                                with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
-                                    st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
+                        with sub_adultos:
+                            menus_adultos = {
+                                "Ficción": "📖 Ficción Adultos (821)",
+                                "CDU 0": "📂 CDU 0 - Generalidades",
+                                "CDU 1": "📂 CDU 1 - Filosofía / Psicología",
+                                "CDU 2": "📂 CDU 2 - Religión / Teología",
+                                "CDU 3": "📂 CDU 3 - Ciencias Sociales / Economía",
+                                "CDU 5": "📂 CDU 5 - Ciencias Puras / Naturales",
+                                "CDU 6": "📂 CDU 6 - Ciencias Aplicadas / Tecnología",
+                                "CDU 7": "📂 CDU 7 - Bellas Artes / Deportes",
+                                "CDU 8": "📂 CDU 8 - Lingüística / Literatura (Excl. Narrativa)",
+                                "CDU 9": "📂 CDU 9 - Geografía / Historia"
+                            }
+                            hay_ad = False
+                            for k, titulo_ex in menus_adultos.items():
+                                g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Adultos") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
+                                if not g.empty:
+                                    hay_ad = True
+                                    with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
+                                        st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
 
-                        if not hay_ad: st.info("No hay sugerencias para adultos con este filtro.")
+                            if not hay_ad: st.info("No hay sugerencias para adultos con este filtro.")
 
-                    with sub_infantil:
-                        menus_infantil = {
-                            "I0": "👶 I0 - Bebeteca", "I1": "🧸 I1 - Hasta 6 años",
-                            "I2": "🎒 I2 - 7 a 9 años", "I3": "🛡️ I3 - 10 a 12 años", "JN": "⚡ JN - Juvenil",
-                            "I CDU 0": "📚 I CDU 0 - Generalidades", "I CDU 1": "📚 I CDU 1 - Filosofía",
-                            "I CDU 2": "📚 I CDU 2 - Religión", "I CDU 3": "📚 I CDU 3 - Ciencias Sociales",
-                            "I CDU 4": "📚 I CDU 4 - Lengua", "I CDU 5": "📚 I CDU 5 - Ciencias Puras",
-                            "I CDU 6": "📚 I CDU 6 - Ciencias Aplicadas", "I CDU 7": "📚 I CDU 7 - Arte / Deportes",
-                            "I CDU 8": "📚 I CDU 8 - Literatura", "I CDU 9": "📚 I CDU 9 - Geografía e Historia"
-                        }
-                        hay_inf = False
-                        for k, titulo_ex in menus_infantil.items():
-                            g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Infantil") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
-                            if not g.empty:
-                                hay_inf = True
-                                with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
-                                    st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
-                        
-                        if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.")
+                        with sub_infantil:
+                            menus_infantil = {
+                                "I0": "👶 I0 - Bebeteca", "I1": "🧸 I1 - Hasta 6 años",
+                                "I2": "🎒 I2 - 7 a 9 años", "I3": "🛡️ I3 - 10 a 12 años", "JN": "⚡ JN - Juvenil",
+                                "I CDU 0": "📚 I CDU 0 - Generalidades", "I CDU 1": "📚 I CDU 1 - Filosofía",
+                                "I CDU 2": "📚 I CDU 2 - Religión", "I CDU 3": "📚 I CDU 3 - Ciencias Sociales",
+                                "I CDU 4": "📚 I CDU 4 - Lengua", "I CDU 5": "📚 I CDU 5 - Ciencias Puras",
+                                "I CDU 6": "📚 I CDU 6 - Ciencias Aplicadas", "I CDU 7": "📚 I CDU 7 - Arte / Deportes",
+                                "I CDU 8": "📚 I CDU 8 - Literatura", "I CDU 9": "📚 I CDU 9 - Geografía e Historia"
+                            }
+                            hay_inf = False
+                            for k, titulo_ex in menus_infantil.items():
+                                g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Infantil") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
+                                if not g.empty:
+                                    hay_inf = True
+                                    with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
+                                        st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
+                           
+                            if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.")
