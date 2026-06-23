@@ -683,7 +683,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
 
         # B) RECOMENDACIONES POR CDU (CON REGLAS ESTRICTAS DE FILTRADO ANTI-RUIDO)
         with subtab_rec_cdu:
-            st.subheader("🎯 Sugerencias de Adquisición por Distribución Estricta")
+            st.subheader("🎯 Sugerencias de Adquisición por CDU")
             
             if conn is None:
                 st.error("No hay conexión activa con la base de datos.")
