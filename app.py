@@ -698,7 +698,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 busqueda_cdu = st.text_input(
                     "⌨️ Filtrar por CDU específica (Soporta comodines como `*`):",
                     value="",
-                    placeholder="Ej: 3* para Ciencias Sociales, 94(460)* para Historia de España, o 51*",
+                    placeholder="Ej: 004* para informática",
                     key="b_cdu_libre"
                 ).strip().upper()
 
