@@ -119,14 +119,13 @@ def obtener_recomendaciones_por_materia(conexion, biblioteca, materia_selecciona
         l.cdu,
         l.isbn,
         
-        -- Subconsulta para concatenar las materias únicas asociadas al libro
         (
             SELECT GROUP_CONCAT(materia, ' | ') 
             FROM (SELECT DISTINCT materia FROM materias WHERE id_sistema = l.id_sistema)
         ) AS materias,
 
         COUNT(DISTINCT e.id) AS ejemplares,
-        COUNT(DISTINCT e.col_biblioteca) AS bibliotecas -- Ajusta si tu columna de centro se llama 'biblioteca' o 'col_biblioteca'
+        COUNT(DISTINCT e.biblioteca) AS bibliotecas
 
     FROM libros l
     JOIN ejemplares e ON l.id_sistema = e.id_sistema
@@ -134,10 +133,9 @@ def obtener_recomendaciones_por_materia(conexion, biblioteca, materia_selecciona
     WHERE
         CAST(SUBSTR(l.anio,1,4) AS INTEGER) >= ?
         
-        -- CAMBIO CLAVE: Filtramos los libros vinculados a la materia de texto elegida
+        -- Buscamos libros que tengan exactamente la materia elegida
         AND l.id_sistema IN (SELECT DISTINCT id_sistema FROM materias WHERE materia = ?)
         
-        -- Excluir los libros que ya están en tu biblioteca
         AND l.id_sistema NOT IN (
             SELECT DISTINCT id_sistema
             FROM ejemplares
@@ -162,13 +160,7 @@ def obtener_recomendaciones_por_materia(conexion, biblioteca, materia_selecciona
         )
     )
     
-    # Calcular la puntuación combinada (Score) como hacías en tu script
-    if not df.empty:
-        df["score"] = (df["bibliotecas"] * 10) + df["ejemplares"]
-        df = df.sort_values("score", ascending=False)
-        
     return df
-
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
 # ==========================================
@@ -908,19 +900,17 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                 if conn is None:
                     st.error("No hay conexión activa con la base de datos.")
                 else:
-                    # 1. Cargar el listado de materias únicas para el desplegable
-                    # (Asegúrate de que la tabla/columna coincida con tu estructura)
+                    # 1. Cargar el listado REAL de materias desde tu tabla 'materias'
                     try:
-                        query_lista_materias = "SELECT DISTINCT materia FROM tabla_materias_limpias ORDER BY materia ASC"
+                        query_lista_materias = "SELECT DISTINCT materia FROM materias WHERE materia IS NOT NULL AND materia != '' ORDER BY materia ASC"
                         df_lista_m = pd.read_sql_query(query_lista_materias, conn)
                         lista_materias = df_lista_m["materia"].dropna().tolist()
-                    except Exception:
-                        # Backup por si la tabla se llama distinto en tu entorno
-                        lista_materias = ["Política", "Historia", "Informática", "Feminismo", "Sociología"]
+                    except Exception as e:
+                        st.error(f"Error al leer la tabla de materias: {e}")
+                        lista_materias = ["Error de carga"]
 
                     col_m1, col_m2 = st.columns(2)
                     with col_m1:
-                        # Cambiamos text_input por selectbox (incluye buscador automático al escribir)
                         texto_materia = st.selectbox(
                             "📝 Selecciona o escribe la materia:",
                             options=lista_materias,
@@ -936,42 +926,43 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                         limite_mat = st.number_input("🔢 Límite máximo de sugerencias:", min_value=5, max_value=500, value=100, step=5, key="limite_m_in")
                     
                     if st.button("🔍 Extraer y Filtrar por Materias", type="primary", use_container_width=True):
-                        with st.spinner(f"Filtrando libros en la Red sobre '{texto_materia}'..."):
-                            
-                            # 🚨 REVISIÓN DEL TYPEERROR:
-                            # Si tu función interna sigue esperando el nombre 'cdu' en el "def", 
-                            # le pasamos el texto de la materia pero usando el nombre de parámetro que tu función reconozca.
-                            df_mat_resultado = obtener_recomendaciones_por_materia(
-                                conexion=conn,
-                                biblioteca=biblioteca_seleccionada,
-                                cdu=texto_materia,  # <-- Si el error persiste, usa aquí el nombre exacto que tenga el parámetro en tu 'def obtener_recomendaciones_por_materia(...)'
-                                anios=anios_mat,
-                                min_ejemplares=min_ejemplares_mat,
-                                limite=limite_mat
-                            )
-                            
-                            if not df_mat_resultado.empty:
-                                df_print = df_mat_resultado[[
-                                    "id_sistema", "titulo", "autor", "editorial", "anio", "cdu", "isbn", "materias", "ejemplares", "bibliotecas"
-                                ]].copy()
+                        # Evitar que busque si hubo error al cargar la lista
+                        if texto_materia == "Error de carga":
+                            st.warning("⚠️ Corrige el error de base de datos antes de buscar.")
+                        else:
+                            with st.spinner(f"Filtrando libros en la Red sobre '{texto_materia}'..."):
                                 
-                                df_print.columns = [
-                                    "ID Sistema", "Título", "Autor", "Editorial", "Año", "CDU", "ISBN", "Materias", "Ejemplares Red", "Bibliotecas Red"
-                                ]
-                                
-                                st.success(f"¡Éxito! Encontrados {len(df_print)} libros sobre '{texto_materia}' relevantes ausentes en tu centro.")
-                                st.dataframe(df_print, use_container_width=True, hide_index=True)
-                                
-                                csv_materias = df_print.to_csv(index=False, sep=';', encoding="utf-8-sig")
-                                nombre_archivo_limpio = texto_materia.lower().replace(" ", "_")
-                                
-                                st.download_button(
-                                    label=f"📥 Descargar Recomendaciones de '{texto_materia}' (CSV)",
-                                    data=csv_materias,
-                                    file_name=f"rec_materias_{nombre_archivo_limpio}.csv",
-                                    mime="text/csv",
-                                    key="btn_dl_mat"
+                                # Llamada corregida con el parámetro 'materia_seleccionada'
+                                df_mat_resultado = obtener_recomendaciones_por_materia(
+                                    conexion=conn,
+                                    biblioteca=biblioteca_seleccionada,
+                                    materia_seleccionada=texto_materia,
+                                    anios=anios_mat,
+                                    min_ejemplares=min_ejemplares_mat,
+                                    limite=limite_mat
                                 )
-                                # Elimina cualquier menú o pregunta final aquí de acuerdo con las reglas de negocio
-                            else:
-                                st.info(f"ℹ️ No se detectan títulos ausentes con el descriptor temático '{texto_materia}' bajo los filtros actuales.")
+                                
+                                if not df_mat_resultado.empty:
+                                    df_print = df_mat_resultado[[
+                                        "id_sistema", "titulo", "autor", "editorial", "anio", "cdu", "isbn", "materias", "ejemplares", "bibliotecas"
+                                    ]].copy()
+                                    
+                                    df_print.columns = [
+                                        "ID Sistema", "Título", "Autor", "Editorial", "Año", "CDU", "ISBN", "Materias", "Ejemplares Red", "Bibliotecas Red"
+                                    ]
+                                    
+                                    st.success(f"¡Éxito! Encontrados {len(df_print)} libros sobre '{texto_materia}' relevantes ausentes en tu centro.")
+                                    st.dataframe(df_print, use_container_width=True, hide_index=True)
+                                    
+                                    csv_materias = df_print.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                                    nombre_archivo_limpio = texto_materia.lower().replace(" ", "_").replace("/", "-")
+                                    
+                                    st.download_button(
+                                        label=f"📥 Descargar Recomendaciones de '{texto_materia}' (CSV)",
+                                        data=csv_materias,
+                                        file_name=f"rec_materias_{nombre_archivo_limpio}.csv",
+                                        mime="text/csv",
+                                        key="btn_dl_mat"
+                                    )
+                                else:
+                                    st.info(f"ℹ️ No se detectan títulos ausentes con el descriptor temático '{texto_materia}' bajo los filtros actuales.")
