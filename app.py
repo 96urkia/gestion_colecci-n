@@ -670,12 +670,18 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             # --- 3. APLICACIÓN DE LA LÓGICA DE FILTRADO COMBINADA ---
             df_final_expurgo = df_nivel1.copy()
            
+             # --- 3. APLICACIÓN DE LA LÓGICA DE FILTRADO COMBINADA ---
+    df_final_expurgo = df_nivel1.copy()
+   
             # 1. Filtrado por la caja de texto (Soporte de comodines '*')
             if busqueda_sig:
                 if '*' in busqueda_sig:
-                    import fnmatch
-                    # Traduce el patrón de comodín nativo (ej: *(460)*) a una Expresión Regular válida
-                    regex_patron = fnmatch.translate(busqueda_sig)
+                    import re
+                    # 1. Escapamos caracteres especiales de regex (convierte '(' en '\(', '*' en '\*', etc.)
+                    patron_escapado = re.escape(busqueda_sig)
+                    # 2. Convertimos el asterisco escapado '\*' en el comodín universal '.*' compatible con PyArrow
+                    regex_patron = patron_escapado.replace(r'\*', '.*')
+                    
                     df_final_expurgo = df_final_expurgo[
                         df_final_expurgo['signatura_real'].str.upper().str.strip().str.match(regex_patron, na=False)
                     ]
@@ -684,6 +690,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                     df_final_expurgo = df_final_expurgo[
                         df_final_expurgo['signatura_real'].str.upper().str.strip().str.startswith(busqueda_sig, na=False)
                     ]
+
             
             # 2. Filtrado por Desplegables de Categorías (Ahora acumulativos)
             if filtro_cat != "Todas":
