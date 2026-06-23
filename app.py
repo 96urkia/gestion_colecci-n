@@ -358,14 +358,8 @@ with st.sidebar:
         uploaded_mas2 = st.file_uploader("Más Prestados (.txt)", type=["txt"])
 
         st.markdown("---")
-        st.header("⚙️ 3. Configuración")
-        tipo_analisis = st.selectbox(
-            "Método de agrupación del tejuelo/CDU:",
-            ["Clasificación Mixta Estándar (CDU + Letras)", "Solo Dígitos Iniciales de la CDU", "Longitud Fija (Primeros caracteres)"]
-        )
-        num_caracteres = st.slider("Caracteres a extraer:", 1, 10, 3) if tipo_analisis == "Longitud Fija (Primeros caracteres)" else None
-
-        st.markdown("---")
+        
+       
         if st.button("🚀 Analizar Fondos", type="primary", use_container_width=True):
             if not uploaded_topo or not uploaded_catalogo:
                 st.error("⚠️ Sube los archivos requeridos.")
