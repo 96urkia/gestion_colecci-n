@@ -19,21 +19,26 @@ if 'resultado' not in st.session_state:
 # CONFIGURACIÓN DE BASE DE DATOS
 # ==========================================
 DB_PATH = "gestion_coleccion.db"
-DB_URL = "https://www.dropbox.com/scl/fi/zlhw2qkfpebtvzaimxto1/bibliotecas_navarra2.db?rlkey=fg46liauy6omsq3dkz4gnn5pk&st=umks3ppu&dl=0"
+# 1. CAMBIO CLAVE: Cambiamos dl=0 por dl=1 al final de la URL para forzar la descarga directa del binario (.db)
+DB_URL = "https://www.dropbox.com/scl/fi/zlhw2qkfpebtvzaimxto1/bibliotecas_navarra2.db?rlkey=fg46liauy6omsq3dkz4gnn5pk&st=umks3ppu&dl=1"
 
 def asegurar_base_de_datos():
     """Maneja la descarga del archivo en disco. 
-    No se cachea con Streamlit porque ya valida la existencia del archivo."""
+    Limpia archivos HTML corruptos previos y descarga el archivo SQLite real."""
     debe_descargar = False
+    
     if not os.path.exists(DB_PATH):
         debe_descargar = True
     elif os.path.getsize(DB_PATH) < 10000:  
+        # 2. DETECCIÓN: Si el archivo mide menos de 10KB, es el texto HTML de la vista previa vieja.
+        # Lo eliminamos para que no interfiera con SQLite.
         os.remove(DB_PATH)  
         debe_descargar = True
 
     if debe_descargar:
         with st.spinner("Descargando base de datos de la colección (500MB)... Esto puede tardar un minuto la primera vez."):
             try:
+                # Al ir con dl=1, urlretrieve descargará los ~500MB reales directamente al disco
                 urllib.request.urlretrieve(DB_URL, DB_PATH)
                 st.toast("¡Base de datos descargada con éxito!", icon="📥")
                 return True
@@ -41,6 +46,16 @@ def asegurar_base_de_datos():
                 st.error(f"Error crítico al descargar la base de datos desde Dropbox: {e}")
                 return False
     return True
+
+# ==========================================
+# EJECUCIÓN DE LA VERIFICACIÓN
+# ==========================================
+# Llamamos a la función antes de crear cualquier conexión 'conn = sqlite3.connect(...)'
+if asegurar_base_de_datos():
+    conn = sqlite3.connect(DB_PATH)
+else:
+    conn = None
+    st.error("No se pudo establecer la conexión porque falló la preparación del archivo .db")
 
 @st.cache_resource
 def obtener_conexion_db():
