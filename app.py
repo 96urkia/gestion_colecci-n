@@ -21,8 +21,9 @@ if 'resultado' not in st.session_state:
 DB_PATH = "gestion_coleccion.db"
 DB_URL = "https://www.dropbox.com/scl/fi/pj1zlttvrb0g3deki1p3n/bibliotecas_navarra1.db?rlkey=ougwwguuucdjdsn2y47dm5gwm&st=9ctsqgy1&dl=1"
 
-@st.cache_resource
-def obtener_conexion_db():
+def asegurar_base_de_datos():
+    """Maneja la descarga del archivo en disco. 
+    No se cachea con Streamlit porque ya valida la existencia del archivo."""
     debe_descargar = False
     if not os.path.exists(DB_PATH):
         debe_descargar = True
@@ -35,19 +36,30 @@ def obtener_conexion_db():
             try:
                 urllib.request.urlretrieve(DB_URL, DB_PATH)
                 st.toast("¡Base de datos descargada con éxito!", icon="📥")
+                return True
             except Exception as e:
                 st.error(f"Error crítico al descargar la base de datos desde Dropbox: {e}")
-                return None
-               
+                return False
+    return True
+
+@st.cache_resource
+def obtener_conexion_db():
+    """Únicamente se encarga de cachear el recurso de conexión, 
+    completamente limpio de lógica visual compleja."""
     try:
         conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         return conn
     except Exception as e:
-        st.error(f"Error al conectar con el archivo SQLite: {e}")
         return None
 
-# Inicializar la conexión
-conn = obtener_conexion_db()
+# Inicializar la lógica de manera secuencial y segura
+if asegurar_base_de_datos():
+    conn = obtener_conexion_db()
+    if conn is None:
+        st.error("Error al conectar con el archivo SQLite.")
+else:
+    conn = None
+
 
 # ==========================================
 # FUNCIONES AUXILIARES DE RECOMENDACIÓN
