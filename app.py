@@ -103,6 +103,70 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
 
+def obtener_recomendaciones_por_materia(conexion, biblioteca, cdu, anios=2, min_ejemplares=3, limite=200):
+    """
+    Busca libros de una materia específica (CDU) ausentes en la biblioteca actual,
+    concatenando sus materias de manera única (sin duplicados).
+    """
+    from datetime import datetime
+    anio_minimo = datetime.now().year - anios
+    
+    query = """
+    SELECT
+        l.id_sistema,
+        l.titulo,
+        l.autor,
+        l.editorial,
+        l.anio,
+        l.cdu,
+        l.isbn,
+        
+        -- Subconsulta correlacionada para extraer materias sin duplicación por JOIN
+        (
+            SELECT GROUP_CONCAT(materia, ' | ') 
+            FROM (SELECT DISTINCT materia FROM materias WHERE id_sistema = l.id_sistema)
+        ) AS materias,
+
+        COUNT(DISTINCT e.id) AS ejemplares,
+        COUNT(DISTINCT e.biblioteca) AS bibliotecas
+
+    FROM libros l
+    JOIN ejemplares e ON l.id_sistema = e.id_sistema
+
+    WHERE
+        CAST(SUBSTR(l.anio,1,4) AS INTEGER) >= ?
+        AND l.cdu LIKE ?
+        AND l.id_sistema NOT IN (
+            SELECT DISTINCT id_sistema
+            FROM ejemplares
+            WHERE UPPER(biblioteca) LIKE ?
+        )
+
+    GROUP BY l.id_sistema
+    HAVING ejemplares >= ?
+    ORDER BY bibliotecas DESC, ejemplares DESC
+    LIMIT ?
+    """
+    try:
+        df = pd.read_sql_query(
+            query,
+            conexion,
+            params=(
+                anio_minimo,
+                f"{cdu}%",
+                f"%{biblioteca.upper().strip()}%",
+                min_ejemplares,
+                limite
+            )
+        )
+        if not df.empty:
+            df["score"] = (df["bibliotecas"] * 10) + df["ejemplares"]
+            df = df.sort_values("score", ascending=False)
+        return df
+    except Exception as e:
+        st.error(f"❌ Error en la consulta de materias: {str(e)}")
+        return pd.DataFrame()
+
 
 # ==========================================
 # BACKEND Y FUNCIÓN DE PROCESAMIENTO
@@ -830,3 +894,62 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
                            
                             if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.") 
+       
+        # ======================================================================
+        # C) RECOMENDACIONES POR MATERIAS (NUEVA SECCIÓN DETALLADA)
+        # ======================================================================
+        with subtab_rec_materias:
+            st.subheader("📝 Análisis de Títulos por Materias Únicas")
+            st.markdown("Consulta qué libros de una temática concreta (CDU) triunfan en Navarra pero faltan en tu centro, mostrando sus etiquetas temáticas limpias.")
+            
+            if conn is None:
+                st.error("No hay conexión activa con la base de datos.")
+            else:
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    cdu_materia = st.text_input("📂 Prefijo CDU a analizar:", value="32", help="Ej: 32 para Política, 004 para Informática, 94 para Historia.", key="cdu_m_in").strip()
+                    anios_mat = st.number_input("📅 Antigüedad máxima (Años transcurridos):", min_value=1, max_value=40, value=2, key="anios_m_in")
+                with col_f2: # Reutilizamos espaciado visual coordinado
+                    min_ejemplares_mat = st.number_input("📚 Mínimo ejemplares en la Red:", min_value=1, max_value=100, value=3, key="min_ej_m_in")
+                    limite_mat = st.number_input("🔢 Límite máximo de sugerencias:", min_value=5, max_value=500, value=100, step=5, key="limite_m_in")
+                
+                if st.button("🔍 Extraer y Filtrar por Materias", type="primary", use_container_width=True):
+                    if not cdu_materia:
+                        st.warning("⚠️ Introduce un código CDU de inicio para realizar la consulta.")
+                    else:
+                        with st.spinner("Filtrando base de datos y unificando descriptores temáticos..."):
+                            df_mat_resultado = obtener_recomendaciones_por_materia(
+                                conexion=conn,
+                                biblioteca=biblioteca_seleccionada,
+                                cdu=cdu_materia,
+                                anios=anios_mat,
+                                min_ejemplares=min_ejemplares_mat,
+                                limite=limite_mat
+                            )
+                            
+                            if not df_mat_resultado.empty:
+                                # Seleccionamos y renombramos columnas de cara al usuario final
+                                df_print = df_mat_resultado[[
+                                    "id_sistema", "titulo", "autor", "editorial", "anio", "cdu", "isbn", "materias", "ejemplares", "bibliotecas"
+                                ]].copy()
+                                
+                                df_print.columns = [
+                                    "ID Sistema", "Título", "Autor", "Editorial", "Año", "CDU", "ISBN", "Materias", "Ejemplares Red", "Bibliotecas Red"
+                                ]
+                                
+                                st.success(f"¡Éxito! Encontrados {len(df_print)} libros relevantes ausentes en tu centro.")
+                                
+                                # Visualizador interactivo de Streamlit
+                                st.dataframe(df_print, use_container_width=True, hide_index=True)
+                                
+                                # Botón de descarga CSV integrado compatible con Excel (Encoding utf-8-sig)
+                                csv_materias = df_print.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                                st.download_button(
+                                    label=f"📥 Descargar Recomendaciones CDU {cdu_materia} (CSV)",
+                                    data=csv_materias,
+                                    file_name=f"rec_materias_cdu_{cdu_materia}.csv",
+                                    mime="text/csv",
+                                    key="btn_dl_mat"
+                                )
+                            else:
+                                st.info(f"ℹ️ No se detectan títulos ausentes que cumplan con los filtros para la CDU {cdu_materia}.")
