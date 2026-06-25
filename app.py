@@ -397,491 +397,491 @@ with st.sidebar:
             st.session_state['resultado'] = None
             st.rerun()
 
-# ==========================================
-# PANEL CENTRAL: ESTRUCTURA MAESTRA DE DOS CATEGORÍAS
-# ==========================================
-if st.session_state['analizado'] and st.session_state['resultado'] is not None:
-    df_completo, huerfanos = st.session_state['resultado']
-  
-    total_docs = len(df_completo)
-    pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
-    edad_media = df_completo['year'].mean()
-    docs_por_habitante = total_docs / poblacion_atendida if poblacion_atendida > 0 else 0
-
-    # Indicadores globales superiores
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric(t("📖 Total Volúmenes", "📖 Bolumen Totala"), f"{total_docs:,}")
-    m2.metric(t("🪪 Índice de Circulación", "🪪 Zirkulazio Indizea"), f"{pct_prestados:.1f}%")
-    m3.metric(
-        t("📅 Edad Media del Fondo", "📅 Bildumaren Batez besteko Adina"), 
-        f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A"
-    )
-    m4.metric(t("👥 Docs por Habitante", "👥 Biztanleko Dokumentuak"), f"{docs_por_habitante:.2f}")
-  
-    if huerfanos > 0:
-        st.caption(t(
-            f"ℹ️ Se han omitido {huerfanos} registros del topográfico por incoherencias con el catálogo.",
-            f"ℹ️ {huerfanos} erregistro omisitu dira topografikotik katalogoarekin koherentziarik ez dutelako."
-        ))
-
-    st.markdown("---")
-
-    # LAS DOS GRANDES CATEGORÍAS SOLICITADAS
-    pestana_analisis, pestana_compras = st.tabs([
-        t("📊 1. Análisis de la Colección", "📊 1. Bildumaren Analisia"),
-        t("🎯 2. Recomendaciones de Compra", "🎯 2. Erosketa Gomendioak")
-    ])
-
-        # ==========================================
-    # BLOQUE 1: ANÁLISIS DE LA COLECCIÓN
     # ==========================================
-    with pestana_analisis:
-        subtab_general, subtab_cdu, subtab_signatura = st.tabs([
-            t("📈 A) Análisis General", "📈 A) Analisi Orokorra"),
-            t("🗂️ B) Análisis por CDU", "🗂️ B) CDU arabera Analisia"),
-            t("🔎 C) Análisis Profundo por Signatura", "🔎 C) Signatura arabera Analisi Sakona")
-        ])
-       
-        # A) ANÁLISIS GENERAL
-        with subtab_general:
-            st.subheader(t("⚖️ Diagnóstico según Pautas Oficiales (IFLA)", "⚖️ IFLAren arauen arabera diagnostikoa"))
-          
-            # 1. Matriz completa de pautas oficiales según tramos de población
-            if poblacion_atendida <= 5000:
-                pauta_hab, pauta_min, pauta_max = 2.5, 4000, 5500
-            elif poblacion_atendida <= 10000:
-                pauta_hab, pauta_min, pauta_max = 2.5, 7000, 12500
-            elif poblacion_atendida <= 20000:
-                pauta_hab, pauta_min, pauta_max = 2.0, 12500, 20000
-            elif poblacion_atendida <= 50000:
-                pauta_hab, pauta_min, pauta_max = 2.0, 20000, 65000
-            elif poblacion_atendida <= 100000:
-                pauta_hab, pauta_min, pauta_max = 1.5, 45000, 80000
-            else:
-                pauta_hab, pauta_min, pauta_max = 1.5, 80000, 95000
-
-            col_al1, col_al2 = st.columns(2)
-            with col_al1:
-                # Diagnóstico por volumen bruto total
-                if total_docs < 2500:
-                    st.error(t(
-                        f"🚨 **Alerta:** Suelo mínimo absoluto IFLA es de 2.500 obras. Tienes **{total_docs:,}**.",
-                        f"🚨 **Alerta:** IFLAren gutxieneko zorua 2.500 obra da. **{total_docs:,}** dituzu."
-                    ))
-                elif total_docs < pauta_min:
-                    st.warning(t(
-                        f"⚠️ **Déficit de fondo:** Recomendado para tu población: {pauta_min:,}-{pauta_max:,}. Tienes **{total_docs:,}** u.",
-                        f"⚠️ **Fondo defizita:** Zure populazioarentzat gomendatua: {pauta_min:,}-{pauta_max:,}. **{total_docs:,}** dituzu."
-                    ))
-                elif total_docs > pauta_max:
-                    st.info(t(
-                        f"ℹ️ **Fondo extenso:** El rango inicial recomendado es {pauta_min:,}-{pauta_max:,}. Tienes **{total_docs:,}** u.",
-                        f"ℹ️ **Fondo zabala:** Gomendatutako hasierako tartea {pauta_min:,}-{pauta_max:,} da. **{total_docs:,}** dituzu."
-                    ))
-                else:
-                    st.success(t(
-                        f"✅ **Óptimo:** Volumen bruto adecuado dentro del rango ({pauta_min:,}-{pauta_max:,}).",
-                        f"✅ **Optimoa:** Bolumen gordina tarte egokian dago ({pauta_min:,}-{pauta_max:,})."
-                    ))
-
-            with col_al2:
-                # Diagnóstico corregido por ratio de habitante
-                if docs_por_habitante > 3.5:
-                    st.warning(t(
-                        f"⚠️ **Colección demasiado grande:** Tienes **{docs_por_habitante:.2f}** libros por persona (Límite óptimo: {pauta_hab} - Máx sugerido: 3.5).",
-                        f"⚠️ **Bilduma handiegia:** Pertsonako **{docs_por_habitante:.2f}** liburu dituzu (Muga optimoa: {pauta_hab} - Gehenez 3.5)."
-                    ))
-                elif docs_por_habitante < pauta_hab:
-                    st.warning(t(
-                        f"⚠️ **Ratio Bajo:** **{docs_por_habitante:.2f}** doc/hab. (Mínimo recomendado: {pauta_hab}).",
-                        f"⚠️ **Ratio baxua:** **{docs_por_habitante:.2f}** dok./bizt. (Gomendatutako gutxienekoa: {pauta_hab})."
-                    ))
-                else:
-                    st.success(t(
-                        f"✅ **Ratio Óptimo:** **{docs_por_habitante:.2f}** doc/hab.",
-                        f"✅ **Ratio Optimoa:** **{docs_por_habitante:.2f}** dok./bizt."
-                    ))
-
-            st.write(t("#### 📊 Distribución Macroscópica", "#### 📊 Banaketa Makroskopikoa"))
-           
-            def clasificar_macro(cat):
-                c = str(cat).strip().upper()
-                if "DVD" in c or "AUDIOVISUAL" in c or "CD" in c:
-                    return "Audiovisuales"
-                if re.match(r'^(I|JN|IC|IP|IT|INFANTIL|JUVENIL)(\s|\d+|-|$)', c):
-                    return "Infantil/Juvenil"
-                return "Adultos"
-
-            df_completo['macro_seccion'] = df_completo['categoria'].apply(clasificar_macro)
-            macro_counts = df_completo['macro_seccion'].value_counts()
-          
-            p_adultos = (macro_counts.get("Adultos", 0) / total_docs * 100) if total_docs > 0 else 0
-            p_infantil = (macro_counts.get("Infantil/Juvenil", 0) / total_docs * 100) if total_docs > 0 else 0
-            p_audio = (macro_counts.get("Audiovisuales", 0) / total_docs * 100) if total_docs > 0 else 0
-
-            tabla_macro = pd.DataFrame({
-                t("Sección", "Atala"): [t("Adultos", "Helduak"), t("Infantil/Juvenil", "Haur/Jubenil"), t("Audiovisuales", "Audiovisualak")],
-                t("Distribución", "Banaketa"): [f"{p_adultos:.1f}%", f"{p_infantil:.1f}%", f"{p_audio:.1f}%"]
-            })
-            st.dataframe(tabla_macro, use_container_width=True, hide_index=True)
-
-            st.write(t("#### 📈 Nivel de Rotación Física", "#### 📈 Erabilera Fisikoaren Maila"))
-            status_map = {0: t('Nunca prestado', 'Inoiz mailegatu gabe'), 
-                         1: t('Prestado', 'Mailegatu'), 
-                         2: t('Muy prestado', 'Oso mailegatu')}
-            status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
-            status_counts.columns = [t('Estado', 'Egoera'), t('Cantidad', 'Kopurua')]
-            
-            fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', hole=0.4, color_discrete_sequence=px.colors.qualitative.Safe)
-            st.plotly_chart(fig_pie, use_container_width=True)
-
-            st.write(t("#### ⏳ Cronología de Ediciones", "#### ⏳ Edizioen Kronologia"))
-            if not df_completo['year'].dropna().empty:
-                fig_hist = px.histogram(
-                    df_completo, 
-                    x='year', 
-                    nbins=25, 
-                    labels={'year': t('Año de Publicación', 'Argitalpen Urtea')}, 
-                    color_discrete_sequence=['#1E3A8A']
-                )
-                st.plotly_chart(fig_hist, use_container_width=True)
-
-        # B) ANÁLISIS POR CDU
-        with subtab_cdu:
-            st.subheader(t("🗂️ Concentración y Rendimiento por Secciones", "🗂️ Atalen Kontzentrazioa eta Errendimendua"))
-          
-            df_metrics = df_completo.groupby('categoria').agg(
-                Volúmenes=('record_id', 'count'),
-                Prestados=('prestado', 'sum'),
-                Año_Medio=('year', 'mean')
-            ).reset_index()
-          
-            df_metrics[t('% Uso (Rotación)', '% Erabilera (Biraketa)')] = (df_metrics['Prestados'] / df_metrics['Volúmenes'] * 100).round(1)
-            df_metrics[t('Año Medio Edición', 'Batez besteko Argitalpen Urtea')] = df_metrics['Año_Medio'].fillna(0).astype(int)
-
-            # ... (mantengo las funciones es_categoria_infantil y segmentación igual)
-
-            df_adultos = df_metrics[~df_metrics['es_infantil']].sort_values(by='Volúmenes', ascending=False)
-            df_infantil = df_metrics[df_metrics['es_infantil']].sort_values(by='Volúmenes', ascending=False)
-          
-            st.markdown(t("### 👨‍💼 Análisis Sección Adultos", "### 👨‍💼 Helduen Atalaren Analisia"))
-            if not df_adultos.empty:
-                fig_bar_adultos = px.bar(
-                    df_adultos,
-                    x='categoria',
-                    y='Volúmenes',
-                    color=t('% Uso (Rotación)', '% Erabilera (Biraketa)'),
-                    title=t("Adultos: Volumen vs Rotación por Categoría", "Helduak: Bolumena vs Biraketa Kategoriaka"),
-                    color_continuous_scale="Blues",
-                    labels={'categoria': t('Categoría / CDU', 'Kategoria / CDU'), 'Volúmenes': t('Nº Volúmenes', 'Bolumen Kopurua')}
-                )
-                st.plotly_chart(fig_bar_adultos, use_container_width=True)
-              
-                st.dataframe(
-                    df_adultos[['categoria', 'Volúmenes', t('% Uso (Rotación)', '% Erabilera (Biraketa)'), t('Año Medio Edición', 'Batez besteko Argitalpen Urtea')]],
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info(t("ℹ️ No hay datos suficientes para generar el análisis de Adultos.", "ℹ️ Ez dago datu nahikorik Helduen analisia sortzeko."))
-
-            st.markdown("---")
-           
-            st.markdown(t("### 👶 Análisis Sección Infantil / Juvenil", "### 👶 Haur eta Jubenilen Atalaren Analisia"))
-            if not df_infantil.empty:
-                fig_bar_infantil = px.bar(
-                    df_infantil,
-                    x='categoria',
-                    y='Volúmenes',
-                    color=t('% Uso (Rotación)', '% Erabilera (Biraketa)'),
-                    title=t("Infantil/Juvenil: Volumen vs Rotación por Categoría", "Haur/Jubenil: Bolumena vs Biraketa Kategoriaka"),
-                    color_continuous_scale="Purples",
-                    labels={'categoria': t('Categoría / Tejuelo', 'Kategoria / Tejuelo'), 'Volúmenes': t('Nº Volúmenes', 'Bolumen Kopurua')}
-                )
-                st.plotly_chart(fig_bar_infantil, use_container_width=True)
-              
-                st.dataframe(
-                    df_infantil[['categoria', 'Volúmenes', t('% Uso (Rotación)', '% Erabilera (Biraketa)'), t('Año Medio Edición', 'Batez besteko Argitalpen Urtea')]],
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info(t("ℹ️ No hay datos suficientes para generar el análisis Infantil.", "ℹ️ Ez dago datu nahikorik Haur analisia sortzeko."))
-
-        # C) ANÁLISIS PROFUNDO POR SIGNATURA
-        with subtab_signatura:
-            st.subheader(t("🔎 Analiza la colección a través de las signaturas.", "🔎 Bilduma signaturen bidez aztertu."))
-           
-            def identificar_infantil(categoria):
-                cat_str = str(categoria).upper()
-                if "INFANTIL" in cat_str or "JUVENIL" in cat_str: return True
-                if re.match(r'^(I[0-9]?|JN|IC|IP|IT)(\s|$)', cat_str): return True
-                return False
-
-            df_completo['es_infantil'] = df_completo['categoria'].apply(identificar_infantil)
-
-            filtro_pub = st.radio(
-                t("1. Selecciona la Sección:", "1. Atala hautatu:"),
-                [t("📚 Todo el fondo", "📚 Bilduma osoa"), 
-                 t("👨‍💼 Solo Adultos", "👨‍💼 Helduak soilik"), 
-                 t("👶 Solo Infantil / Juvenil", "👶 Haur/Jubenil soilik")], 
-                horizontal=True
-            )
-          
-            df_nivel1 = df_completo.copy()
-            if "Adultos" in filtro_pub:
-                df_nivel1 = df_nivel1[~df_nivel1['es_infantil']]
-            elif "Infantil" in filtro_pub:
-                df_nivel1 = df_nivel1[df_nivel1['es_infantil']]
-
-            st.markdown("---")
-
-            st.markdown(t("#### 🎯 Criterios de Selección y Búsqueda", "#### 🎯 Hautaketa eta Bilaketa Kriterioak"))
-
-            col_busqueda, col_prestamos = st.columns([2, 1])
-          
-            with col_busqueda:
-                busqueda_sig = st.text_input(
-                    t("⌨️ Buscar por Signatura / CDU (Soporta comodines como `*`):", "⌨️ Signatura / CDU bilatu ( `*` komodinoak onartzen ditu):"),
-                    value="",
-                    placeholder=t("Ej: *(460.16)* para Navarra, 821* para literatura...", "Adib: *(460.16)* Nafarroa, 821* literatura...")
-                ).strip().upper()
-              
-            with col_prestamos:
-                filtro_pr = st.selectbox(
-                    t("🪪 Historial Préstamos:", "🪪 Maileguen Historia:"),
-                    [t("Todos", "Guztiak"), 
-                     t("Nunca prestado (0)", "Inoiz mailegatu gabe (0)"), 
-                     t("Préstamo Estándar (1)", "Mailegu Estandarra (1)"), 
-                     t("Alta Demanda (2)", "Eskaera Handia (2)")]
-                )
-
-            # ... (resto del código de filtros se mantiene igual, solo traduzco los textos visibles)
-
-            st.markdown("---")
-
-            st.markdown(f"**{t('Resultados encontrados', 'Aurkitutako emaitzak')}: {len(df_final_expurgo)} {t('documentos', 'dokumentu')}**")
-          
-            tabla_mostrar = df_final_expurgo[['record_id', 'signatura_real', 'titulo', 'year', 'categoria', 'prestamos']].copy()
-            tabla_mostrar.columns = [
-                'id_sistema', 
-                t('Signatura', 'Signatura'), 
-                t('Título', 'Izenburua'), 
-                t('Año', 'Urtea'), 
-                t('Categoría', 'Kategoria'), 
-                t('Préstamos', 'Maileguak')
-            ]
-          
-            st.dataframe(tabla_mostrar, use_container_width=True, hide_index=True)
-
-            st.markdown(t("### 📊 Indicadores Globales de la Selección", "### 📊 Hautaketaren Adierazle Globalak"))
-
-            if not df_final_expurgo.empty:
-                num_volumenes = len(df_final_expurgo)
-                libros_prestados = (df_final_expurgo['prestamos'] > 0).sum()
-                pct_prestados = round((libros_prestados / num_volumenes) * 100, 1)
-              
-                anios_validos = df_final_expurgo['year'].dropna()
-                anio_medio_col = int(anios_validos.mean()) if not anios_validos.empty else t("Sin datos de año", "Urte daturik ez")
-
-                df_resumen_kpi = pd.DataFrame([{
-                    t("Número de volúmenes", "Bolumen kopurua"): f"{num_volumenes} ej.",
-                    t("% de préstamos (Uso Activo)", "% mailegu (Erabilera Aktiboa)"): f"{pct_prestados} %",
-                    t("Año medio de la colección", "Bildumaren batez besteko urtea"): anio_medio_col
-                }])
-              
-                st.dataframe(df_resumen_kpi, use_container_width=True, hide_index=True)
-            else:
-                st.info(t("ℹ️ Modifica los criterios de búsqueda para calcular los indicadores del fondo.", "ℹ️ Bilaketa irizpideak aldatu fondoaren adierazleak kalkulatzeko."))
-
-        # ==========================================
-    # BLOQUE 2: RECOMENDACIONES DE COMPRA
+    # PANEL CENTRAL: ESTRUCTURA MAESTRA DE DOS CATEGORÍAS
     # ==========================================
-    with pestana_compras:
-        subtab_rec_gen, subtab_rec_cdu = st.tabs([
-            t("🌐 A) Recomendaciones Generales", "🌐 A) Gomendio Orokorrak"),
-            t("📚 B) Recomendaciones por CDU", "📚 B) CDU arabera Gomendioak")
+    if st.session_state['analizado'] and st.session_state['resultado'] is not None:
+        df_completo, huerfanos = st.session_state['resultado']
+      
+        total_docs = len(df_completo)
+        pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
+        edad_media = df_completo['year'].mean()
+        docs_por_habitante = total_docs / poblacion_atendida if poblacion_atendida > 0 else 0
+    
+        # Indicadores globales superiores
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(t("📖 Total Volúmenes", "📖 Bolumen Totala"), f"{total_docs:,}")
+        m2.metric(t("🪪 Índice de Circulación", "🪪 Zirkulazio Indizea"), f"{pct_prestados:.1f}%")
+        m3.metric(
+            t("📅 Edad Media del Fondo", "📅 Bildumaren Batez besteko Adina"), 
+            f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A"
+        )
+        m4.metric(t("👥 Docs por Habitante", "👥 Biztanleko Dokumentuak"), f"{docs_por_habitante:.2f}")
+      
+        if huerfanos > 0:
+            st.caption(t(
+                f"ℹ️ Se han omitido {huerfanos} registros del topográfico por incoherencias con el catálogo.",
+                f"ℹ️ {huerfanos} erregistro omisitu dira topografikotik katalogoarekin koherentziarik ez dutelako."
+            ))
+    
+        st.markdown("---")
+    
+        # LAS DOS GRANDES CATEGORÍAS SOLICITADAS
+        pestana_analisis, pestana_compras = st.tabs([
+            t("📊 1. Análisis de la Colección", "📊 1. Bildumaren Analisia"),
+            t("🎯 2. Recomendaciones de Compra", "🎯 2. Erosketa Gomendioak")
         ])
-       
-        # A) RECOMENDACIONES GENERALES
-        with subtab_rec_gen:
-            st.subheader(t("📈 Títulos más Populares en la Red Ausentes en tu Centro", "📈 Sareko Titulu Popularesenak Zure Zentroan Ez Daudenak"))
-            limite_gen = st.number_input(
-                t("Número de títulos a sugerir:", "Gomendatutako titulu kopurua:"), 
-                min_value=5, max_value=200, value=50, step=5
-            )
+    
+            # ==========================================
+        # BLOQUE 1: ANÁLISIS DE LA COLECCIÓN
+        # ==========================================
+        with pestana_analisis:
+            subtab_general, subtab_cdu, subtab_signatura = st.tabs([
+                t("📈 A) Análisis General", "📈 A) Analisi Orokorra"),
+                t("🗂️ B) Análisis por CDU", "🗂️ B) CDU arabera Analisia"),
+                t("🔎 C) Análisis Profundo por Signatura", "🔎 C) Signatura arabera Analisi Sakona")
+            ])
            
-            if conn is not None:
-                df_rec_gen = obtener_recomendaciones_automaticas(conn, biblioteca_seleccionada, limite_gen)
-                if not df_rec_gen.empty:
-                    df_rec_gen.columns = [
-                        "ID Sistema", 
-                        t("Título", "Izenburua"), 
-                        t("Autor", "Egilea"), 
-                        t("Año", "Urtea"), 
-                        t("Nº Bibliotecas en Red", "Sarean Liburutegi Kopurua")
-                    ]
-                    st.dataframe(df_rec_gen, use_container_width=True, hide_index=True)
-                   
-                    csv_gen = df_rec_gen.to_csv(index=False, sep=';', encoding="utf-8-sig")
-                    st.download_button(
-                        t("📥 Descargar Listado General (CSV)", "📥 Zerrenda Orokorra Deskargatu (CSV)"), 
-                        csv_gen, 
-                        "sugerencias_generales.csv", 
-                        "text/csv"
-                    )
+            # A) ANÁLISIS GENERAL
+            with subtab_general:
+                st.subheader(t("⚖️ Diagnóstico según Pautas Oficiales (IFLA)", "⚖️ IFLAren arauen arabera diagnostikoa"))
+              
+                # 1. Matriz completa de pautas oficiales según tramos de población
+                if poblacion_atendida <= 5000:
+                    pauta_hab, pauta_min, pauta_max = 2.5, 4000, 5500
+                elif poblacion_atendida <= 10000:
+                    pauta_hab, pauta_min, pauta_max = 2.5, 7000, 12500
+                elif poblacion_atendida <= 20000:
+                    pauta_hab, pauta_min, pauta_max = 2.0, 12500, 20000
+                elif poblacion_atendida <= 50000:
+                    pauta_hab, pauta_min, pauta_max = 2.0, 20000, 65000
+                elif poblacion_atendida <= 100000:
+                    pauta_hab, pauta_min, pauta_max = 1.5, 45000, 80000
                 else:
-                    st.info(t("No se encontraron recomendaciones pendientes.", "Ez da gomendiorik aurkitu."))
-        
-        # ------------------------------------------
-        # B) RECOMENDACIONES POR CDU
-        # ------------------------------------------
-        with subtab_rec_cdu:
-            st.subheader(t("🎯 Sugerencias de Adquisición por CDU", "🎯 CDU arabera Erosketa Gomendioak"))
-           
-            if conn is None:
-                st.error(t("No hay conexión activa con la base de datos.", "Ez dago datu-basearekin konexio aktiborik."))
-            else:
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    limite_cdu = st.number_input(
-                        t("Máximo por subcategoría:", "Gehieneko subcategoriako:"), 
-                        min_value=1, max_value=100, value=10, key="l_cdu"
-                    )
-                with col_f2:
-                    anio_minimo = st.number_input(
-                        t("Año mínimo publicación:", "Argitalpen urte minimoa:"), 
-                        min_value=1800, max_value=2026, value=2015, key="a_cdu"
-                    )
-
-                busqueda_cdu = st.text_input(
-                    t("⌨️ Filtrar por CDU específica (Soporta comodines como `*`):", "⌨️ CDU zehatzaren arabera iragazi (`*` onartzen du):"),
-                    value="",
-                    placeholder=t("Ej: 004* para informática", "Adib: 004* informatika"),
-                    key="b_cdu_libre"
-                ).strip().upper()
-
-                biblioteca = biblioteca_seleccionada.upper().strip()
-
-                query_cdu = """
-                SELECT
-                    l.id_sistema, l.titulo, l.autor, l.anio, l.cdu,
-                    COUNT(DISTINCT e.biblioteca) AS id_red_bibliotecas,
-                    GROUP_CONCAT(e.signatura, '||') AS todas_signaturas
-                FROM libros l
-                JOIN ejemplares e ON l.id_sistema = e.id_sistema
-                WHERE l.id_sistema NOT IN (
-                    SELECT DISTINCT id_sistema FROM ejemplares WHERE UPPER(TRIM(biblioteca)) = ?
-                )
-                AND CAST(COALESCE(l.anio, 0) AS INTEGER) >= ?
-                GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
-                HAVING id_red_bibliotecas > 0
-                """
-               
-                with st.spinner(t("Modelando el embudo de categorías de la Red...", "Sareko kategoriatan embudoa modelatzen...")):
-                    df_raw_cdu = pd.read_sql_query(query_cdu, conn, params=[biblioteca, int(anio_minimo)])
-
-                if df_raw_cdu.empty:
-                    st.warning(t("No hay recomendaciones con la configuración de años actual.", "Ez dago gomendiorik uneko urte konfigurazioarekin."))
-                else:
-                    if busqueda_cdu:
-                        if '*' in busqueda_cdu:
-                            import re
-                            patron_escapado = re.escape(busqueda_cdu)
-                            regex_patron = patron_escapado.replace(r'\*', '.*')
-                            df_raw_cdu = df_raw_cdu[
-                                df_raw_cdu['cdu'].astype(str).str.upper().str.strip().str.match(regex_patron, na=False)
-                            ]
-                        else:
-                            df_raw_cdu = df_raw_cdu[
-                                df_raw_cdu['cdu'].astype(str).str.upper().str.strip().str.startswith(busqueda_cdu, na=False)
-                            ]
-
-                    if df_raw_cdu.empty:
-                        st.info(t("ℹ️ Ninguna sugerencia de la Red coincide con el patrón de CDU introducido.", "ℹ️ Sareko gomendiorik ez dator bat sartutako CDU ereduarekin."))
+                    pauta_hab, pauta_min, pauta_max = 1.5, 80000, 95000
+    
+                col_al1, col_al2 = st.columns(2)
+                with col_al1:
+                    # Diagnóstico por volumen bruto total
+                    if total_docs < 2500:
+                        st.error(t(
+                            f"🚨 **Alerta:** Suelo mínimo absoluto IFLA es de 2.500 obras. Tienes **{total_docs:,}**.",
+                            f"🚨 **Alerta:** IFLAren gutxieneko zorua 2.500 obra da. **{total_docs:,}** dituzu."
+                        ))
+                    elif total_docs < pauta_min:
+                        st.warning(t(
+                            f"⚠️ **Déficit de fondo:** Recomendado para tu población: {pauta_min:,}-{pauta_max:,}. Tienes **{total_docs:,}** u.",
+                            f"⚠️ **Fondo defizita:** Zure populazioarentzat gomendatua: {pauta_min:,}-{pauta_max:,}. **{total_docs:,}** dituzu."
+                        ))
+                    elif total_docs > pauta_max:
+                        st.info(t(
+                            f"ℹ️ **Fondo extenso:** El rango inicial recomendado es {pauta_min:,}-{pauta_max:,}. Tienes **{total_docs:,}** u.",
+                            f"ℹ️ **Fondo zabala:** Gomendatutako hasierako tartea {pauta_min:,}-{pauta_max:,} da. **{total_docs:,}** dituzu."
+                        ))
                     else:
-                        def clasificar_infantil(todas_sigs):
-                            if not todas_sigs: return None
-                            sigs = [s.strip().upper() for s in str(todas_sigs).split('||') if s.strip()]
-                            for sig in sigs:
-                                match_edad = re.search(r'\b(I0|I1|I2|I3|JN)\b', sig)
-                                if match_edad: return match_edad.group(1)
-                                match_mat = re.search(r'\bI\s+([0-9])\b', sig)
-                                if match_mat: return f"I CDU {match_mat.group(1)}"
-                                match_typo = re.search(r'\bI([4-9])\b', sig)
-                                if match_typo: return f"I CDU {match_typo.group(1)}"
-                            return None
-
-                        def clasificar_libro(row):
-                            cdu = str(row["cdu"]).strip().upper()
-                            if cdu.startswith("087.5"):
-                                cat_inf = clasificar_infantil(row.get("todas_signaturas", ""))
-                                if cat_inf: return "Infantil", cat_inf
-                                return None, None
-                            if cdu.startswith("821"):
-                                return "Adultos", "Ficción"
-                            m = re.match(r'^(\d)', cdu)
-                            if m:
-                                digito = m.group(1)
-                                if digito in ['0', '1', '2', '3', '5', '6', '7', '8', '9']:
-                                    return "Adultos", f"CDU {digito}"
-                            return None, None
-
-                        res_eval = df_raw_cdu.apply(clasificar_libro, axis=1)
-                        df_raw_cdu["subtab_destino"] = [r[0] for r in res_eval]
-                        df_raw_cdu["categoria_final"] = [r[1] for r in res_eval]
+                        st.success(t(
+                            f"✅ **Óptimo:** Volumen bruto adecuado dentro del rango ({pauta_min:,}-{pauta_max:,}).",
+                            f"✅ **Optimoa:** Bolumen gordina tarte egokian dago ({pauta_min:,}-{pauta_max:,})."
+                        ))
+    
+                with col_al2:
+                    # Diagnóstico corregido por ratio de habitante
+                    if docs_por_habitante > 3.5:
+                        st.warning(t(
+                            f"⚠️ **Colección demasiado grande:** Tienes **{docs_por_habitante:.2f}** libros por persona (Límite óptimo: {pauta_hab} - Máx sugerido: 3.5).",
+                            f"⚠️ **Bilduma handiegia:** Pertsonako **{docs_por_habitante:.2f}** liburu dituzu (Muga optimoa: {pauta_hab} - Gehenez 3.5)."
+                        ))
+                    elif docs_por_habitante < pauta_hab:
+                        st.warning(t(
+                            f"⚠️ **Ratio Bajo:** **{docs_por_habitante:.2f}** doc/hab. (Mínimo recomendado: {pauta_hab}).",
+                            f"⚠️ **Ratio baxua:** **{docs_por_habitante:.2f}** dok./bizt. (Gomendatutako gutxienekoa: {pauta_hab})."
+                        ))
+                    else:
+                        st.success(t(
+                            f"✅ **Ratio Óptimo:** **{docs_por_habitante:.2f}** doc/hab.",
+                            f"✅ **Ratio Optimoa:** **{docs_por_habitante:.2f}** dok./bizt."
+                        ))
+    
+                st.write(t("#### 📊 Distribución Macroscópica", "#### 📊 Banaketa Makroskopikoa"))
+               
+                def clasificar_macro(cat):
+                    c = str(cat).strip().upper()
+                    if "DVD" in c or "AUDIOVISUAL" in c or "CD" in c:
+                        return "Audiovisuales"
+                    if re.match(r'^(I|JN|IC|IP|IT|INFANTIL|JUVENIL)(\s|\d+|-|$)', c):
+                        return "Infantil/Juvenil"
+                    return "Adultos"
+    
+                df_completo['macro_seccion'] = df_completo['categoria'].apply(clasificar_macro)
+                macro_counts = df_completo['macro_seccion'].value_counts()
+              
+                p_adultos = (macro_counts.get("Adultos", 0) / total_docs * 100) if total_docs > 0 else 0
+                p_infantil = (macro_counts.get("Infantil/Juvenil", 0) / total_docs * 100) if total_docs > 0 else 0
+                p_audio = (macro_counts.get("Audiovisuales", 0) / total_docs * 100) if total_docs > 0 else 0
+    
+                tabla_macro = pd.DataFrame({
+                    t("Sección", "Atala"): [t("Adultos", "Helduak"), t("Infantil/Juvenil", "Haur/Jubenil"), t("Audiovisuales", "Audiovisualak")],
+                    t("Distribución", "Banaketa"): [f"{p_adultos:.1f}%", f"{p_infantil:.1f}%", f"{p_audio:.1f}%"]
+                })
+                st.dataframe(tabla_macro, use_container_width=True, hide_index=True)
+    
+                st.write(t("#### 📈 Nivel de Rotación Física", "#### 📈 Erabilera Fisikoaren Maila"))
+                status_map = {0: t('Nunca prestado', 'Inoiz mailegatu gabe'), 
+                             1: t('Prestado', 'Mailegatu'), 
+                             2: t('Muy prestado', 'Oso mailegatu')}
+                status_counts = df_completo['prestamos'].map(status_map).value_counts().reset_index()
+                status_counts.columns = [t('Estado', 'Egoera'), t('Cantidad', 'Kopurua')]
+                
+                fig_pie = px.pie(status_counts, values='Cantidad', names='Estado', hole=0.4, color_discrete_sequence=px.colors.qualitative.Safe)
+                st.plotly_chart(fig_pie, use_container_width=True)
+    
+                st.write(t("#### ⏳ Cronología de Ediciones", "#### ⏳ Edizioen Kronologia"))
+                if not df_completo['year'].dropna().empty:
+                    fig_hist = px.histogram(
+                        df_completo, 
+                        x='year', 
+                        nbins=25, 
+                        labels={'year': t('Año de Publicación', 'Argitalpen Urtea')}, 
+                        color_discrete_sequence=['#1E3A8A']
+                    )
+                    st.plotly_chart(fig_hist, use_container_width=True)
+    
+            # B) ANÁLISIS POR CDU
+            with subtab_cdu:
+                st.subheader(t("🗂️ Concentración y Rendimiento por Secciones", "🗂️ Atalen Kontzentrazioa eta Errendimendua"))
+              
+                df_metrics = df_completo.groupby('categoria').agg(
+                    Volúmenes=('record_id', 'count'),
+                    Prestados=('prestado', 'sum'),
+                    Año_Medio=('year', 'mean')
+                ).reset_index()
+              
+                df_metrics[t('% Uso (Rotación)', '% Erabilera (Biraketa)')] = (df_metrics['Prestados'] / df_metrics['Volúmenes'] * 100).round(1)
+                df_metrics[t('Año Medio Edición', 'Batez besteko Argitalpen Urtea')] = df_metrics['Año_Medio'].fillna(0).astype(int)
+    
+                # ... (mantengo las funciones es_categoria_infantil y segmentación igual)
+    
+                df_adultos = df_metrics[~df_metrics['es_infantil']].sort_values(by='Volúmenes', ascending=False)
+                df_infantil = df_metrics[df_metrics['es_infantil']].sort_values(by='Volúmenes', ascending=False)
+              
+                st.markdown(t("### 👨‍💼 Análisis Sección Adultos", "### 👨‍💼 Helduen Atalaren Analisia"))
+                if not df_adultos.empty:
+                    fig_bar_adultos = px.bar(
+                        df_adultos,
+                        x='categoria',
+                        y='Volúmenes',
+                        color=t('% Uso (Rotación)', '% Erabilera (Biraketa)'),
+                        title=t("Adultos: Volumen vs Rotación por Categoría", "Helduak: Bolumena vs Biraketa Kategoriaka"),
+                        color_continuous_scale="Blues",
+                        labels={'categoria': t('Categoría / CDU', 'Kategoria / CDU'), 'Volúmenes': t('Nº Volúmenes', 'Bolumen Kopurua')}
+                    )
+                    st.plotly_chart(fig_bar_adultos, use_container_width=True)
+                  
+                    st.dataframe(
+                        df_adultos[['categoria', 'Volúmenes', t('% Uso (Rotación)', '% Erabilera (Biraketa)'), t('Año Medio Edición', 'Batez besteko Argitalpen Urtea')]],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.info(t("ℹ️ No hay datos suficientes para generar el análisis de Adultos.", "ℹ️ Ez dago datu nahikorik Helduen analisia sortzeko."))
+    
+                st.markdown("---")
+               
+                st.markdown(t("### 👶 Análisis Sección Infantil / Juvenil", "### 👶 Haur eta Jubenilen Atalaren Analisia"))
+                if not df_infantil.empty:
+                    fig_bar_infantil = px.bar(
+                        df_infantil,
+                        x='categoria',
+                        y='Volúmenes',
+                        color=t('% Uso (Rotación)', '% Erabilera (Biraketa)'),
+                        title=t("Infantil/Juvenil: Volumen vs Rotación por Categoría", "Haur/Jubenil: Bolumena vs Biraketa Kategoriaka"),
+                        color_continuous_scale="Purples",
+                        labels={'categoria': t('Categoría / Tejuelo', 'Kategoria / Tejuelo'), 'Volúmenes': t('Nº Volúmenes', 'Bolumen Kopurua')}
+                    )
+                    st.plotly_chart(fig_bar_infantil, use_container_width=True)
+                  
+                    st.dataframe(
+                        df_infantil[['categoria', 'Volúmenes', t('% Uso (Rotación)', '% Erabilera (Biraketa)'), t('Año Medio Edición', 'Batez besteko Argitalpen Urtea')]],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.info(t("ℹ️ No hay datos suficientes para generar el análisis Infantil.", "ℹ️ Ez dago datu nahikorik Haur analisia sortzeko."))
+    
+            # C) ANÁLISIS PROFUNDO POR SIGNATURA
+            with subtab_signatura:
+                st.subheader(t("🔎 Analiza la colección a través de las signaturas.", "🔎 Bilduma signaturen bidez aztertu."))
+               
+                def identificar_infantil(categoria):
+                    cat_str = str(categoria).upper()
+                    if "INFANTIL" in cat_str or "JUVENIL" in cat_str: return True
+                    if re.match(r'^(I[0-9]?|JN|IC|IP|IT)(\s|$)', cat_str): return True
+                    return False
+    
+                df_completo['es_infantil'] = df_completo['categoria'].apply(identificar_infantil)
+    
+                filtro_pub = st.radio(
+                    t("1. Selecciona la Sección:", "1. Atala hautatu:"),
+                    [t("📚 Todo el fondo", "📚 Bilduma osoa"), 
+                     t("👨‍💼 Solo Adultos", "👨‍💼 Helduak soilik"), 
+                     t("👶 Solo Infantil / Juvenil", "👶 Haur/Jubenil soilik")], 
+                    horizontal=True
+                )
+              
+                df_nivel1 = df_completo.copy()
+                if "Adultos" in filtro_pub:
+                    df_nivel1 = df_nivel1[~df_nivel1['es_infantil']]
+                elif "Infantil" in filtro_pub:
+                    df_nivel1 = df_nivel1[df_nivel1['es_infantil']]
+    
+                st.markdown("---")
+    
+                st.markdown(t("#### 🎯 Criterios de Selección y Búsqueda", "#### 🎯 Hautaketa eta Bilaketa Kriterioak"))
+    
+                col_busqueda, col_prestamos = st.columns([2, 1])
+              
+                with col_busqueda:
+                    busqueda_sig = st.text_input(
+                        t("⌨️ Buscar por Signatura / CDU (Soporta comodines como `*`):", "⌨️ Signatura / CDU bilatu ( `*` komodinoak onartzen ditu):"),
+                        value="",
+                        placeholder=t("Ej: *(460.16)* para Navarra, 821* para literatura...", "Adib: *(460.16)* Nafarroa, 821* literatura...")
+                    ).strip().upper()
+                  
+                with col_prestamos:
+                    filtro_pr = st.selectbox(
+                        t("🪪 Historial Préstamos:", "🪪 Maileguen Historia:"),
+                        [t("Todos", "Guztiak"), 
+                         t("Nunca prestado (0)", "Inoiz mailegatu gabe (0)"), 
+                         t("Préstamo Estándar (1)", "Mailegu Estandarra (1)"), 
+                         t("Alta Demanda (2)", "Eskaera Handia (2)")]
+                    )
+    
+                # ... (resto del código de filtros se mantiene igual, solo traduzco los textos visibles)
+    
+                st.markdown("---")
+    
+                st.markdown(f"**{t('Resultados encontrados', 'Aurkitutako emaitzak')}: {len(df_final_expurgo)} {t('documentos', 'dokumentu')}**")
+              
+                tabla_mostrar = df_final_expurgo[['record_id', 'signatura_real', 'titulo', 'year', 'categoria', 'prestamos']].copy()
+                tabla_mostrar.columns = [
+                    'id_sistema', 
+                    t('Signatura', 'Signatura'), 
+                    t('Título', 'Izenburua'), 
+                    t('Año', 'Urtea'), 
+                    t('Categoría', 'Kategoria'), 
+                    t('Préstamos', 'Maileguak')
+                ]
+              
+                st.dataframe(tabla_mostrar, use_container_width=True, hide_index=True)
+    
+                st.markdown(t("### 📊 Indicadores Globales de la Selección", "### 📊 Hautaketaren Adierazle Globalak"))
+    
+                if not df_final_expurgo.empty:
+                    num_volumenes = len(df_final_expurgo)
+                    libros_prestados = (df_final_expurgo['prestamos'] > 0).sum()
+                    pct_prestados = round((libros_prestados / num_volumenes) * 100, 1)
+                  
+                    anios_validos = df_final_expurgo['year'].dropna()
+                    anio_medio_col = int(anios_validos.mean()) if not anios_validos.empty else t("Sin datos de año", "Urte daturik ez")
+    
+                    df_resumen_kpi = pd.DataFrame([{
+                        t("Número de volúmenes", "Bolumen kopurua"): f"{num_volumenes} ej.",
+                        t("% de préstamos (Uso Activo)", "% mailegu (Erabilera Aktiboa)"): f"{pct_prestados} %",
+                        t("Año medio de la colección", "Bildumaren batez besteko urtea"): anio_medio_col
+                    }])
+                  
+                    st.dataframe(df_resumen_kpi, use_container_width=True, hide_index=True)
+                else:
+                    st.info(t("ℹ️ Modifica los criterios de búsqueda para calcular los indicadores del fondo.", "ℹ️ Bilaketa irizpideak aldatu fondoaren adierazleak kalkulatzeko."))
+    
+            # ==========================================
+        # BLOQUE 2: RECOMENDACIONES DE COMPRA
+        # ==========================================
+        with pestana_compras:
+            subtab_rec_gen, subtab_rec_cdu = st.tabs([
+                t("🌐 A) Recomendaciones Generales", "🌐 A) Gomendio Orokorrak"),
+                t("📚 B) Recomendaciones por CDU", "📚 B) CDU arabera Gomendioak")
+            ])
+           
+            # A) RECOMENDACIONES GENERALES
+            with subtab_rec_gen:
+                st.subheader(t("📈 Títulos más Populares en la Red Ausentes en tu Centro", "📈 Sareko Titulu Popularesenak Zure Zentroan Ez Daudenak"))
+                limite_gen = st.number_input(
+                    t("Número de títulos a sugerir:", "Gomendatutako titulu kopurua:"), 
+                    min_value=5, max_value=200, value=50, step=5
+                )
+               
+                if conn is not None:
+                    df_rec_gen = obtener_recomendaciones_automaticas(conn, biblioteca_seleccionada, limite_gen)
+                    if not df_rec_gen.empty:
+                        df_rec_gen.columns = [
+                            "ID Sistema", 
+                            t("Título", "Izenburua"), 
+                            t("Autor", "Egilea"), 
+                            t("Año", "Urtea"), 
+                            t("Nº Bibliotecas en Red", "Sarean Liburutegi Kopurua")
+                        ]
+                        st.dataframe(df_rec_gen, use_container_width=True, hide_index=True)
                        
-                        df_raw_cdu = df_raw_cdu[df_raw_cdu["subtab_destino"].notna()].copy()
-                        df_raw_cdu = df_raw_cdu.sort_values("id_red_bibliotecas", ascending=False)
-
-                        sub_adultos, sub_infantil = st.tabs([
-                            t("👨‍💼 Sección Adultos", "👨‍💼 Helduen Atala"),
-                            t("👶 Sección Infantil", "👶 Haur Atala")
-                        ])
-
-                        with sub_adultos:
-                            menus_adultos = {
-                                "Ficción": t("📖 Ficción Adultos (821)", "📖 Helduen Fikzioa (821)"),
-                                "CDU 0": t("📂 CDU 0 - Generalidades", "📂 CDU 0 - Orokorra"),
-                                "CDU 1": t("📂 CDU 1 - Filosofía / Psicología", "📂 CDU 1 - Filosofia / Psikologia"),
-                                "CDU 2": t("📂 CDU 2 - Religión / Teología", "📂 CDU 2 - Erlijioa / Teologia"),
-                                "CDU 3": t("📂 CDU 3 - Ciencias Sociales / Economía", "📂 CDU 3 - Gizarte Zientziak / Ekonomia"),
-                                "CDU 5": t("📂 CDU 5 - Ciencias Puras / Naturales", "📂 CDU 5 - Zientzia Pureak / Natur Zientziak"),
-                                "CDU 6": t("📂 CDU 6 - Ciencias Aplicadas / Technology", "📂 CDU 6 - Zientzia Aplikatuak"),
-                                "CDU 7": t("📂 CDU 7 - Bellas Artes / Deportes", "📂 CDU 7 - Arte Ederrak / Kirolak"),
-                                "CDU 8": t("📂 CDU 8 - Lingüística / Literatura (Excl. Narrativa)", "📂 CDU 8 - Linguistika / Literatura"),
-                                "CDU 9": t("📂 CDU 9 - Geografía / Historia", "📂 CDU 9 - Geografia / Historia")
-                            }
-                            hay_ad = False
-                            for k, titulo_ex in menus_adultos.items():
-                                g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Adultos") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
-                                if not g.empty:
-                                    hay_ad = True
-                                    with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
-                                        st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
-                            if not hay_ad: 
-                                st.info(t("No hay sugerencias para adultos con este filtro.", "Ez dago gomendiorik helduentzat filtro honekin."))
-
-                        with sub_infantil:
-                            menus_infantil = {
-                                "I0": t("👶 I0 - Bebeteca", "👶 I0 - Bebeteka"),
-                                "I1": t("🧸 I1 - Hasta 6 años", "🧸 I1 - 6 urte arte"),
-                                "I2": t("🎒 I2 - 7 a 9 años", "🎒 I2 - 7 eta 9 urte"),
-                                "I3": t("🛡️ I3 - 10 a 12 años", "🛡️ I3 - 10 eta 12 urte"),
-                                "JN": t("⚡ JN - Juvenil", "⚡ JN - Jubenil"),
-                                "I CDU 0": t("📚 I CDU 0 - Generalidades", "📚 I CDU 0 - Orokorra"),
-                                # ... (resto de entradas similares)
-                                "I CDU 9": t("📚 I CDU 9 - Geografía e Historia", "📚 I CDU 9 - Geografia eta Historia")
-                            }
-                            hay_inf = False
-                            for k, titulo_ex in menus_infantil.items():
-                                g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Infantil") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
-                                if not g.empty:
-                                    hay_inf = True
-                                    with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
-                                        st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
-                            if not hay_inf: 
-                                st.info(t("No hay sugerencias infantiles con este filtro.", "Ez dago gomendiorik haurrentzat filtro honekin."))
-
-
-
+                        csv_gen = df_rec_gen.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                        st.download_button(
+                            t("📥 Descargar Listado General (CSV)", "📥 Zerrenda Orokorra Deskargatu (CSV)"), 
+                            csv_gen, 
+                            "sugerencias_generales.csv", 
+                            "text/csv"
+                        )
+                    else:
+                        st.info(t("No se encontraron recomendaciones pendientes.", "Ez da gomendiorik aurkitu."))
+            
+            # ------------------------------------------
+            # B) RECOMENDACIONES POR CDU
+            # ------------------------------------------
+            with subtab_rec_cdu:
+                st.subheader(t("🎯 Sugerencias de Adquisición por CDU", "🎯 CDU arabera Erosketa Gomendioak"))
+               
+                if conn is None:
+                    st.error(t("No hay conexión activa con la base de datos.", "Ez dago datu-basearekin konexio aktiborik."))
+                else:
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        limite_cdu = st.number_input(
+                            t("Máximo por subcategoría:", "Gehieneko subcategoriako:"), 
+                            min_value=1, max_value=100, value=10, key="l_cdu"
+                        )
+                    with col_f2:
+                        anio_minimo = st.number_input(
+                            t("Año mínimo publicación:", "Argitalpen urte minimoa:"), 
+                            min_value=1800, max_value=2026, value=2015, key="a_cdu"
+                        )
+    
+                    busqueda_cdu = st.text_input(
+                        t("⌨️ Filtrar por CDU específica (Soporta comodines como `*`):", "⌨️ CDU zehatzaren arabera iragazi (`*` onartzen du):"),
+                        value="",
+                        placeholder=t("Ej: 004* para informática", "Adib: 004* informatika"),
+                        key="b_cdu_libre"
+                    ).strip().upper()
+    
+                    biblioteca = biblioteca_seleccionada.upper().strip()
+    
+                    query_cdu = """
+                    SELECT
+                        l.id_sistema, l.titulo, l.autor, l.anio, l.cdu,
+                        COUNT(DISTINCT e.biblioteca) AS id_red_bibliotecas,
+                        GROUP_CONCAT(e.signatura, '||') AS todas_signaturas
+                    FROM libros l
+                    JOIN ejemplares e ON l.id_sistema = e.id_sistema
+                    WHERE l.id_sistema NOT IN (
+                        SELECT DISTINCT id_sistema FROM ejemplares WHERE UPPER(TRIM(biblioteca)) = ?
+                    )
+                    AND CAST(COALESCE(l.anio, 0) AS INTEGER) >= ?
+                    GROUP BY l.id_sistema, l.titulo, l.autor, l.anio, l.cdu
+                    HAVING id_red_bibliotecas > 0
+                    """
+                   
+                    with st.spinner(t("Modelando el embudo de categorías de la Red...", "Sareko kategoriatan embudoa modelatzen...")):
+                        df_raw_cdu = pd.read_sql_query(query_cdu, conn, params=[biblioteca, int(anio_minimo)])
+    
+                    if df_raw_cdu.empty:
+                        st.warning(t("No hay recomendaciones con la configuración de años actual.", "Ez dago gomendiorik uneko urte konfigurazioarekin."))
+                    else:
+                        if busqueda_cdu:
+                            if '*' in busqueda_cdu:
+                                import re
+                                patron_escapado = re.escape(busqueda_cdu)
+                                regex_patron = patron_escapado.replace(r'\*', '.*')
+                                df_raw_cdu = df_raw_cdu[
+                                    df_raw_cdu['cdu'].astype(str).str.upper().str.strip().str.match(regex_patron, na=False)
+                                ]
+                            else:
+                                df_raw_cdu = df_raw_cdu[
+                                    df_raw_cdu['cdu'].astype(str).str.upper().str.strip().str.startswith(busqueda_cdu, na=False)
+                                ]
+    
+                        if df_raw_cdu.empty:
+                            st.info(t("ℹ️ Ninguna sugerencia de la Red coincide con el patrón de CDU introducido.", "ℹ️ Sareko gomendiorik ez dator bat sartutako CDU ereduarekin."))
+                        else:
+                            def clasificar_infantil(todas_sigs):
+                                if not todas_sigs: return None
+                                sigs = [s.strip().upper() for s in str(todas_sigs).split('||') if s.strip()]
+                                for sig in sigs:
+                                    match_edad = re.search(r'\b(I0|I1|I2|I3|JN)\b', sig)
+                                    if match_edad: return match_edad.group(1)
+                                    match_mat = re.search(r'\bI\s+([0-9])\b', sig)
+                                    if match_mat: return f"I CDU {match_mat.group(1)}"
+                                    match_typo = re.search(r'\bI([4-9])\b', sig)
+                                    if match_typo: return f"I CDU {match_typo.group(1)}"
+                                return None
+    
+                            def clasificar_libro(row):
+                                cdu = str(row["cdu"]).strip().upper()
+                                if cdu.startswith("087.5"):
+                                    cat_inf = clasificar_infantil(row.get("todas_signaturas", ""))
+                                    if cat_inf: return "Infantil", cat_inf
+                                    return None, None
+                                if cdu.startswith("821"):
+                                    return "Adultos", "Ficción"
+                                m = re.match(r'^(\d)', cdu)
+                                if m:
+                                    digito = m.group(1)
+                                    if digito in ['0', '1', '2', '3', '5', '6', '7', '8', '9']:
+                                        return "Adultos", f"CDU {digito}"
+                                return None, None
+    
+                            res_eval = df_raw_cdu.apply(clasificar_libro, axis=1)
+                            df_raw_cdu["subtab_destino"] = [r[0] for r in res_eval]
+                            df_raw_cdu["categoria_final"] = [r[1] for r in res_eval]
+                           
+                            df_raw_cdu = df_raw_cdu[df_raw_cdu["subtab_destino"].notna()].copy()
+                            df_raw_cdu = df_raw_cdu.sort_values("id_red_bibliotecas", ascending=False)
+    
+                            sub_adultos, sub_infantil = st.tabs([
+                                t("👨‍💼 Sección Adultos", "👨‍💼 Helduen Atala"),
+                                t("👶 Sección Infantil", "👶 Haur Atala")
+                            ])
+    
+                            with sub_adultos:
+                                menus_adultos = {
+                                    "Ficción": t("📖 Ficción Adultos (821)", "📖 Helduen Fikzioa (821)"),
+                                    "CDU 0": t("📂 CDU 0 - Generalidades", "📂 CDU 0 - Orokorra"),
+                                    "CDU 1": t("📂 CDU 1 - Filosofía / Psicología", "📂 CDU 1 - Filosofia / Psikologia"),
+                                    "CDU 2": t("📂 CDU 2 - Religión / Teología", "📂 CDU 2 - Erlijioa / Teologia"),
+                                    "CDU 3": t("📂 CDU 3 - Ciencias Sociales / Economía", "📂 CDU 3 - Gizarte Zientziak / Ekonomia"),
+                                    "CDU 5": t("📂 CDU 5 - Ciencias Puras / Naturales", "📂 CDU 5 - Zientzia Pureak / Natur Zientziak"),
+                                    "CDU 6": t("📂 CDU 6 - Ciencias Aplicadas / Technology", "📂 CDU 6 - Zientzia Aplikatuak"),
+                                    "CDU 7": t("📂 CDU 7 - Bellas Artes / Deportes", "📂 CDU 7 - Arte Ederrak / Kirolak"),
+                                    "CDU 8": t("📂 CDU 8 - Lingüística / Literatura (Excl. Narrativa)", "📂 CDU 8 - Linguistika / Literatura"),
+                                    "CDU 9": t("📂 CDU 9 - Geografía / Historia", "📂 CDU 9 - Geografia / Historia")
+                                }
+                                hay_ad = False
+                                for k, titulo_ex in menus_adultos.items():
+                                    g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Adultos") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
+                                    if not g.empty:
+                                        hay_ad = True
+                                        with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
+                                            st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
+                                if not hay_ad: 
+                                    st.info(t("No hay sugerencias para adultos con este filtro.", "Ez dago gomendiorik helduentzat filtro honekin."))
+    
+                            with sub_infantil:
+                                menus_infantil = {
+                                    "I0": t("👶 I0 - Bebeteca", "👶 I0 - Bebeteka"),
+                                    "I1": t("🧸 I1 - Hasta 6 años", "🧸 I1 - 6 urte arte"),
+                                    "I2": t("🎒 I2 - 7 a 9 años", "🎒 I2 - 7 eta 9 urte"),
+                                    "I3": t("🛡️ I3 - 10 a 12 años", "🛡️ I3 - 10 eta 12 urte"),
+                                    "JN": t("⚡ JN - Juvenil", "⚡ JN - Jubenil"),
+                                    "I CDU 0": t("📚 I CDU 0 - Generalidades", "📚 I CDU 0 - Orokorra"),
+                                    # ... (resto de entradas similares)
+                                    "I CDU 9": t("📚 I CDU 9 - Geografía e Historia", "📚 I CDU 9 - Geografia eta Historia")
+                                }
+                                hay_inf = False
+                                for k, titulo_ex in menus_infantil.items():
+                                    g = df_raw_cdu[(df_raw_cdu["subtab_destino"] == "Infantil") & (df_raw_cdu["categoria_final"] == k)].head(limite_cdu)
+                                    if not g.empty:
+                                        hay_inf = True
+                                        with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
+                                            st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
+                                if not hay_inf: 
+                                    st.info(t("No hay sugerencias infantiles con este filtro.", "Ez dago gomendiorik haurrentzat filtro honekin."))
+    
+    
+    
