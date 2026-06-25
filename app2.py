@@ -306,3 +306,131 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
     return df_final, (len(df_topo) - len(df_final))
 
+    # ==========================================
+# ESTILOS E INTERFAZ BASE
+# ==========================================
+st.markdown("""
+    <style>
+    .main-title { font-size: 2.3rem; color: #1E3A8A; font-weight: bold; margin-bottom: 0.3rem; }
+    .subtitle { font-size: 1.1rem; color: #4B5563; margin-bottom: 2rem; }
+    div[data-testid="metric-container"] {
+        background-color: #F3F4F6; border-radius: 0.5rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.markdown(f'<div class="main-title">📚 {t("Gestión de la colección", "Bildumaren kudeaketa")}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="subtitle">{t("Herramienta para ayudarte a conocer un poco mejor la colección de tu biblioteca", "Zure liburutegiko bilduma hobeto ezagutzen laguntzeko tresna")}</div>', unsafe_allow_html=True)
+
+# ==========================================
+# PANEL LATERAL (SIDEBAR)
+# ==========================================
+with st.sidebar:
+    # Selector de Idioma
+    st.title("🌍 Idioma / Hizkuntza")
+    idioma_seleccionado = st.radio(
+        "Selecciona / Aukeratu:",
+        ['ES', 'EU'],
+        index=0 if st.session_state.idioma == 'ES' else 1,
+        horizontal=True
+    )
+    if idioma_seleccionado != st.session_state.idioma:
+        st.session_state.idioma = idioma_seleccionado
+        st.rerun()
+
+    st.header(t("🏢 1. Selección de Biblioteca", "🏢 1. Liburutegiaren Hautaketa"))
+    biblioteca_seleccionada = st.selectbox(
+        t("Biblioteca:", "Liburutegia:"), 
+        options=list(BIBLIOTECAS.keys())
+    )
+    poblacion_atendida = BIBLIOTECAS[biblioteca_seleccionada]
+
+    st.markdown("---")
+
+    if not st.session_state['analizado']:
+        st.header(t("📂 2. Carga de Archivos", "📂 2. Fitxategiak Kargatu"))
+        uploaded_topo = st.file_uploader(
+            t("Archivo Topográfico (.txt) *Requerido*", "Topografiko Fitxategia (.txt) *Beharrezkoa*"), 
+            type=["txt"]
+        )
+        uploaded_catalogo = st.file_uploader(
+            t("Catálogo Completo (.txt) *Requerido*", "Katalogo Osoa (.txt) *Beharrezkoa*"), 
+            type=["txt"]
+        )
+        uploaded_nunca = st.file_uploader(
+            t("No Prestados (.txt)", "Ez mailegatuak (.txt)"), 
+            type=["txt"]
+        )
+        uploaded_mas2 = st.file_uploader(
+            t("Más Prestados (.txt)", "Gehien mailegatuak (.txt)"), 
+            type=["txt"]
+        )
+
+        st.markdown("---")
+       
+        # Variables fijas
+        tipo_analisis = "Clasificación Mixta Estándar (CDU + Letras)"
+        num_caracteres = 3
+      
+        if st.button(t("🚀 Analizar Fondos", "🚀 Bilduma Analizatu"), type="primary", use_container_width=True):
+            if not uploaded_topo or not uploaded_catalogo:
+                st.error(t("⚠️ Sube los archivos requeridos.", "⚠️ Beharrezko fitxategiak igo."))
+            else:
+                with st.spinner(t("Procesando datos...", "Datuak prozesatzen...")):
+                    resultado = procesar_datos(
+                        uploaded_topo.getvalue(),
+                        uploaded_nunca.getvalue() if uploaded_nunca else None,
+                        uploaded_mas2.getvalue() if uploaded_mas2 else None,
+                        uploaded_catalogo.getvalue(),
+                        tipo_analisis,
+                        num_caracteres
+                    )
+                    if resultado is not None:
+                        st.session_state['resultado'] = resultado
+                        st.session_state['analizado'] = True
+                        st.session_state['tipo_analisis'] = tipo_analisis
+                        st.rerun()
+    else:
+        st.success(t("✅ Datos cargados en memoria.", "✅ Datuak memoriara kargatu dira."))
+        if st.button(t("🔄 Cambiar / Volver a subir archivos", "🔄 Aldatu / Fitxategiak berriro igo"), use_container_width=True):
+            st.session_state['analizado'] = False
+            st.session_state['resultado'] = None
+            st.rerun()
+
+# ==========================================
+# PANEL CENTRAL: ESTRUCTURA MAESTRA DE DOS CATEGORÍAS
+# ==========================================
+if st.session_state['analizado'] and st.session_state['resultado'] is not None:
+    df_completo, huerfanos = st.session_state['resultado']
+  
+    total_docs = len(df_completo)
+    pct_prestados = (df_completo['prestado'].sum() / total_docs * 100) if total_docs > 0 else 0
+    edad_media = df_completo['year'].mean()
+    docs_por_habitante = total_docs / poblacion_atendida if poblacion_atendida > 0 else 0
+
+    # Indicadores globales superiores
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(t("📖 Total Volúmenes", "📖 Bolumen Totala"), f"{total_docs:,}")
+    m2.metric(t("🪪 Índice de Circulación", "🪪 Zirkulazio Indizea"), f"{pct_prestados:.1f}%")
+    m3.metric(
+        t("📅 Edad Media del Fondo", "📅 Bildumaren Batez besteko Adina"), 
+        f"{int(edad_media)}" if not np.isnan(edad_media) else "N/A"
+    )
+    m4.metric(t("👥 Docs por Habitante", "👥 Biztanleko Dokumentuak"), f"{docs_por_habitante:.2f}")
+  
+    if huerfanos > 0:
+        st.caption(t(
+            f"ℹ️ Se han omitido {huerfanos} registros del topográfico por incoherencias con el catálogo.",
+            f"ℹ️ {huerfanos} erregistro omisitu dira topografikotik katalogoarekin koherentziarik ez dutelako."
+        ))
+
+    st.markdown("---")
+
+    # LAS DOS GRANDES CATEGORÍAS SOLICITADAS
+    pestana_analisis, pestana_compras = st.tabs([
+        t("📊 1. Análisis de la Colección", "📊 1. Bildumaren Analisia"),
+        t("🎯 2. Recomendaciones de Compra", "🎯 2. Erosketa Gomendioak")
+    ])
+
+
+
