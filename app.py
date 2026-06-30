@@ -820,7 +820,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     # BLOQUE 2: RECOMENDACIONES DE COMPRA
     # ==========================================
     with pestana_compras:
-        subtab_rec_gen, subtab_rec_cdu = st.tabs([
+        subtab_rec_gen, subtab_rec_cdu, subtab_rec_ml = st.tabs([
             "🌐 A) Recomendaciones Generales", 
             "📚 B) Recomendaciones por CDU"
             "🤖 C) Sugerencias por Centros Similares (ML)"
