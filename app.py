@@ -496,12 +496,11 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     # ==========================================
     # BLOQUE 1: ANÁLISIS DE LA COLECCIÓN
     # ==========================================
-    with pestana_compras:
-        # 1. Añadimos la tercera pestaña en la definición
-        subtab_rec_gen, subtab_rec_cdu, subtab_rec_ml = st.tabs([
-            "🌐 A) Recomendaciones Generales",
-            "📚 B) Recomendaciones por CDU",
-            "🤖 C) Sugerencias por Centros Similares (ML)"
+    with pestana_analisis:
+        subtab_general, subtab_cdu, subtab_signatura = st.tabs([
+            "📈 A) Análisis General", 
+            "🗂️ B) Análisis por CDU", 
+            "🔎 C) Análisis Profundo por Signatura"
         ])
         
         # A) ANÁLISIS GENERAL
