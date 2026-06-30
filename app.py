@@ -957,21 +957,22 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         with subtab_rec_ml:
             st.subheader("🤖 Títulos Populares en Centros con Colecciones Similares")
             
-            if conn is None:
-                st.error("No hay conexión activa con la base de datos.")
-            else:
-                # 1. Definimos las variables AQUÍ, dentro del 'else'
-                col_ml1, col_ml2 = st.columns(2)
-                with col_ml1:
-                    limite_ml = st.number_input("Número de sugerencias:", min_value=5, value=20, key="l_ml")
-                with col_ml2:
-                    anio_min_ml = st.number_input("Año mínimo:", min_value=1800, value=2015, key="a_ml")
+            # ... (Tus inputs de limite y año aquí) ...
+            busqueda_cdu_ml = st.text_input("⌨️ Filtrar por CDU (ej: 004*):", key="b_cdu_ml")
+
+            with st.spinner("Analizando similitudes..."):
+                df_rec_ml, vecinos = obtener_recomendaciones_colaborativas(conn, biblioteca_seleccionada, limite=limite_ml, anio_minimo=anio_min_ml)
+
+            if not df_rec_ml.empty:
+                # Mostrar Bibliotecas Similares
+                st.caption(f"**Bibliotecas analizadas (gemelas):** {', '.join(vecinos)}")
                 
-                # 2. La llamada está justo después, usando LAS MISMAS variables
-                with st.spinner("Analizando..."):
-                    df_rec_ml, vecinos = obtener_recomendaciones_colaborativas(
-                        conn, 
-                        biblioteca_seleccionada, 
-                        limite=limite_ml, 
-                        anio_minimo=anio_min_ml
-                    )
+                # Filtrar por CDU igual que en la otra pestaña
+                if busqueda_cdu_ml:
+                    patron = busqueda_cdu_ml.replace('*', '.*').upper()
+                    df_rec_ml = df_rec_ml[df_rec_ml['cdu'].astype(str).str.upper().str.match(patron, na=False)]
+
+                df_rec_ml.columns = ["ID Sistema", "Título", "Autor", "Año", "CDU", "Nº Bibliotecas Gemelas"]
+                st.dataframe(df_rec_ml, use_container_width=True, hide_index=True)
+            else:
+                st.warning("No se encontraron sugerencias.")
