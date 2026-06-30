@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import re
 import plotly.express as px
+from sklearn.metrics.pairwise import cosine_similarity
 
 # ==========================================
 # INICIALIZACIÓN DE ESTADOS DE SESIÓN
@@ -314,6 +315,90 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
 
     df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
     return df_final, (len(df_topo) - len(df_final))
+
+@st.cache_data(ttl=86400) # Cachea el resultado 24 horas para no saturar la CPU
+def obtener_recomendaciones_colaborativas(_conexion, biblioteca_objetivo, limite=20, top_vecinos=5):
+    """
+    Sistema de recomendación por filtrado colaborativo (Item-Based/User-Based).
+    Encuentra bibliotecas gemelas basándose en los fondos que comparten.
+    """
+    biblioteca_objetivo = biblioteca_objetivo.strip().upper()
+    
+    try:
+        # 1. Extraer los datos: Qué biblioteca tiene qué libro
+        # Usamos DISTINCT para saber solo si lo tiene (1), ignorando el número de copias por ahora.
+        query_matriz = """
+            SELECT DISTINCT UPPER(TRIM(biblioteca)) as biblioteca, id_sistema 
+            FROM ejemplares
+            WHERE biblioteca IS NOT NULL AND biblioteca != ''
+        """
+        df_interacciones = pd.read_sql_query(query_matriz, _conexion)
+        
+        if df_interacciones.empty:
+            st.warning("No hay datos suficientes para generar recomendaciones.")
+            return pd.DataFrame()
+            
+        # Añadimos una columna de "rating" implícito (1 = lo tiene)
+        df_interacciones['tiene'] = 1
+        
+        # 2. Pivotar para crear la Matriz Biblioteca-Libro
+        # Llenamos los NaN con 0 (no tiene el libro)
+        matriz = df_interacciones.pivot(index='biblioteca', columns='id_sistema', values='tiene').fillna(0)
+        
+        # Verificamos que la biblioteca objetivo exista en la matriz
+        if biblioteca_objetivo not in matriz.index:
+            st.info(f"La biblioteca {biblioteca_objetivo} no tiene suficientes datos en la red para compararla.")
+            return pd.DataFrame()
+            
+        # 3. Calcular Similitud del Coseno entre todas las bibliotecas
+        # Esto devuelve una matriz cuadrada (Bibliotecas x Bibliotecas)
+        similitudes = cosine_similarity(matriz)
+        df_similitud = pd.DataFrame(similitudes, index=matriz.index, columns=matriz.index)
+        
+        # 4. Encontrar las bibliotecas más "gemelas" (excluyendo a sí misma)
+        similares = df_similitud[biblioteca_objetivo].drop(biblioteca_objetivo)
+        top_bibliotecas = similares.nlargest(top_vecinos).index.tolist()
+        
+        # 5. Descubrir libros que tienen los "gemelos" pero la objetivo NO
+        # Libros de la biblioteca objetivo
+        mis_libros = set(df_interacciones[df_interacciones['biblioteca'] == biblioteca_objetivo]['id_sistema'])
+        
+        # Libros de los vecinos
+        libros_vecinos = df_interacciones[df_interacciones['biblioteca'].isin(top_bibliotecas)]
+        
+        # Filtramos: que no estén en mis_libros
+        recomendaciones_potenciales = libros_vecinos[~libros_vecinos['id_sistema'].isin(mis_libros)]
+        
+        # Contamos en cuántas bibliotecas gemelas está cada libro
+        conteo_rec = recomendaciones_potenciales.groupby('id_sistema').size().reset_index(name='coincidencias')
+        
+        # Nos quedamos con los más repetidos entre los gemelos
+        top_ids = conteo_rec.sort_values(by='coincidencias', ascending=False).head(limite)['id_sistema'].tolist()
+        
+        if not top_ids:
+            return pd.DataFrame()
+            
+        # 6. Recuperar la metadata de los libros recomendados para mostrarlos bonitos
+        placeholders = ','.join(['?'] * len(top_ids))
+        query_metadata = f"""
+            SELECT id_sistema, titulo, autor, anio, cdu
+            FROM libros
+            WHERE id_sistema IN ({placeholders})
+        """
+        df_final = pd.read_sql_query(query_metadata, _conexion, params=top_ids)
+        
+        # Hacemos un merge para añadir la columna de "coincidencias" (en cuántas bibliotecas gemelas está)
+        df_final = df_final.merge(conteo_rec, on='id_sistema')
+        df_final = df_final.sort_values('coincidencias', ascending=False)
+        
+        return df_final
+        
+    except Exception as e:
+        st.error(f"❌ Error en el motor de Machine Learning: {str(e)}")
+        return pd.DataFrame()
+
+
+
 
 # ==========================================
 # ESTILOS E INTERFAZ BASE
