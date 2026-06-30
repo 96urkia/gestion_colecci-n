@@ -961,7 +961,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             busqueda_cdu_ml = st.text_input("⌨️ Filtrar por CDU (ej: 004*):", key="b_cdu_ml")
 
             with st.spinner("Analizando similitudes..."):
-                df_rec_ml, vecinos = obtener_recomendaciones_v2(conn, biblioteca_seleccionada, limite=limite_ml, anio_minimo=anio_min_ml # Ahora sí lo reconocerá)
+                df_rec_ml, vecinos = obtener_recomendaciones_v2(conn, biblioteca_seleccionada, limite=limite_ml, anio_minimo=anio_min_ml)
 
             if not df_rec_ml.empty:
                 # Mostrar Bibliotecas Similares
