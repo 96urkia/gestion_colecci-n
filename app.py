@@ -316,17 +316,16 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
     return df_final, (len(df_topo) - len(df_final))
 
-@st.cache_data(ttl=86400) # Cachea el resultado 24 horas para no saturar la CPU
-def obtener_recomendaciones_colaborativas(_conexion, biblioteca_objetivo, limite=20, top_vecinos=5):
+@st.cache_data(ttl=86400)
+def obtener_recomendaciones_colaborativas(_conexion, biblioteca_objetivo, limite=20, top_vecinos=5, anio_minimo=2015):
     """
-    Sistema de recomendación por filtrado colaborativo (Item-Based/User-Based).
-    Encuentra bibliotecas gemelas basándose en los fondos que comparten.
+    Sistema de recomendación por filtrado colaborativo (Item-Based/User-Based)
+    con filtro estricto por año de publicación.
     """
     biblioteca_objetivo = biblioteca_objetivo.strip().upper()
     
     try:
         # 1. Extraer los datos: Qué biblioteca tiene qué libro
-        # Usamos DISTINCT para saber solo si lo tiene (1), ignorando el número de copias por ahora.
         query_matriz = """
             SELECT DISTINCT UPPER(TRIM(biblioteca)) as biblioteca, id_sistema 
             FROM ejemplares
@@ -335,68 +334,57 @@ def obtener_recomendaciones_colaborativas(_conexion, biblioteca_objetivo, limite
         df_interacciones = pd.read_sql_query(query_matriz, _conexion)
         
         if df_interacciones.empty:
-            st.warning("No hay datos suficientes para generar recomendaciones.")
             return pd.DataFrame()
             
-        # Añadimos una columna de "rating" implícito (1 = lo tiene)
         df_interacciones['tiene'] = 1
         
         # 2. Pivotar para crear la Matriz Biblioteca-Libro
-        # Llenamos los NaN con 0 (no tiene el libro)
         matriz = df_interacciones.pivot(index='biblioteca', columns='id_sistema', values='tiene').fillna(0)
         
-        # Verificamos que la biblioteca objetivo exista en la matriz
         if biblioteca_objetivo not in matriz.index:
-            st.info(f"La biblioteca {biblioteca_objetivo} no tiene suficientes datos en la red para compararla.")
             return pd.DataFrame()
             
-        # 3. Calcular Similitud del Coseno entre todas las bibliotecas
-        # Esto devuelve una matriz cuadrada (Bibliotecas x Bibliotecas)
+        # 3. Calcular Similitud del Coseno (compara todo el fondo histórico, lo cual es más preciso)
         similitudes = cosine_similarity(matriz)
         df_similitud = pd.DataFrame(similitudes, index=matriz.index, columns=matriz.index)
         
-        # 4. Encontrar las bibliotecas más "gemelas" (excluyendo a sí misma)
+        # 4. Encontrar las bibliotecas más "gemelas"
         similares = df_similitud[biblioteca_objetivo].drop(biblioteca_objetivo)
         top_bibliotecas = similares.nlargest(top_vecinos).index.tolist()
         
-        # 5. Descubrir libros que tienen los "gemelos" pero la objetivo NO
-        # Libros de la biblioteca objetivo
+        # 5. Descubrir libros que tienen los vecinos pero el objetivo NO
         mis_libros = set(df_interacciones[df_interacciones['biblioteca'] == biblioteca_objetivo]['id_sistema'])
-        
-        # Libros de los vecinos
         libros_vecinos = df_interacciones[df_interacciones['biblioteca'].isin(top_bibliotecas)]
-        
-        # Filtramos: que no estén en mis_libros
         recomendaciones_potenciales = libros_vecinos[~libros_vecinos['id_sistema'].isin(mis_libros)]
         
-        # Contamos en cuántas bibliotecas gemelas está cada libro
+        # Contamos cuántas bibliotecas gemelas tienen cada libro
         conteo_rec = recomendaciones_potenciales.groupby('id_sistema').size().reset_index(name='coincidencias')
         
-        # Nos quedamos con los más repetidos entre los gemelos
-        top_ids = conteo_rec.sort_values(by='coincidencias', ascending=False).head(limite)['id_sistema'].tolist()
-        
-        if not top_ids:
+        if conteo_rec.empty:
             return pd.DataFrame()
             
-        # 6. Recuperar la metadata de los libros recomendados para mostrarlos bonitos
-        placeholders = ','.join(['?'] * len(top_ids))
-        query_metadata = f"""
-            SELECT id_sistema, titulo, autor, anio, cdu
-            FROM libros
-            WHERE id_sistema IN ({placeholders})
+        # 6. FILTRADO POR AÑO Y EXTRACCIÓN DE METADATOS
+        # En vez de saturar a SQLite pasándole miles de IDs, traemos solo los libros que 
+        # cumplen con el filtro de año y hacemos un inner join con pandas.
+        query_libros = """
+            SELECT id_sistema, titulo, autor, anio, cdu 
+            FROM libros 
+            WHERE CAST(COALESCE(anio, 0) AS INTEGER) >= ?
         """
-        df_final = pd.read_sql_query(query_metadata, _conexion, params=top_ids)
+        df_libros_validos = pd.read_sql_query(query_libros, _conexion, params=[int(anio_minimo)])
         
-        # Hacemos un merge para añadir la columna de "coincidencias" (en cuántas bibliotecas gemelas está)
-        df_final = df_final.merge(conteo_rec, on='id_sistema')
-        df_final = df_final.sort_values('coincidencias', ascending=False)
+        # Cruzamos las recomendaciones con los libros válidos (esto descarta los antiguos automáticamente)
+        df_final = pd.merge(conteo_rec, df_libros_validos, on='id_sistema', how='inner')
+        
+        # 7. Ordenamos por popularidad entre los gemelos, aplicamos el límite y ordenamos columnas
+        df_final = df_final.sort_values('coincidencias', ascending=False).head(limite)
+        df_final = df_final[['id_sistema', 'titulo', 'autor', 'anio', 'cdu', 'coincidencias']]
         
         return df_final
         
     except Exception as e:
-        st.error(f"❌ Error en el motor de Machine Learning: {str(e)}")
+        print(f"Error en el motor de Machine Learning: {str(e)}")
         return pd.DataFrame()
-
 
 
 
@@ -991,35 +979,36 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
 
-     #   ------------------------------------------
-    # C) RECOMENDACIONES BASADAS EN MACHINE LEARNING
-    # ------------------------------------------
-    with subtab_rec_ml:
-        st.subheader("🤖 Títulos Populares en Centros con Colecciones Similares")
-        st.info("Este modelo detecta qué bibliotecas de la red comparten gustos o perfiles de préstamo contigo y te sugiere lo que a ellos les funciona mejor.")
-        
-        if conn is None:
-            st.error("No hay conexión activa con la base de datos.")
-        else:
-            limite_ml = st.number_input("Número de sugerencias de ML a mostrar:", min_value=5, max_value=100, value=20, key="l_ml")
+   # ------------------------------------------
+        # C) RECOMENDACIONES BASADAS EN MACHINE LEARNING
+        # ------------------------------------------
+        with subtab_rec_ml:
+            st.subheader("🤖 Títulos Populares en Centros con Colecciones Similares")
+            st.info("Este modelo detecta qué bibliotecas de la red comparten gustos o perfiles de préstamo contigo y te sugiere lo que a ellos les funciona mejor.")
             
-            # Spinner para el cálculo
-            with st.spinner("Analizando la matriz de la red y calculando similitudes..."):
-                df_rec_ml = obtener_recomendaciones_colaborativas(conn, biblioteca_seleccionada, limite=limite_ml)
-            
-            # Renderizamos los datos FUERA del spinner
-            if not df_rec_ml.empty:
-                # Renombramos las columnas para que se vean amigables en la interfaz
-                df_rec_ml.columns = ["ID Sistema", "Título", "Autor", "Año", "CDU", "Nº de Bibliotecas Gemelas"]
-                
-                st.dataframe(df_rec_ml, use_container_width=True, hide_index=True)
-                
-                # Botón de descarga opcional
-                csv_ml = df_rec_ml.to_csv(index=False, sep=';', encoding="utf-8-sig")
-                st.download_button("📥 Descargar Recomendaciones ML (CSV)", csv_ml, "recomendaciones_similitud.csv", "text/csv")
+            if conn is None:
+                st.error("No hay conexión activa con la base de datos.")
             else:
-                st.warning("No se encontraron centros lo suficientemente similares o no hay nuevas sugerencias para tu colección.")
-
-                        
-                                
-                               
+                # Ponemos los filtros en dos columnas para ahorrar espacio en pantalla
+                col_ml1, col_ml2 = st.columns(2)
+                with col_ml1:
+                    limite_ml = st.number_input("Número de sugerencias de ML a mostrar:", min_value=5, max_value=100, value=20, key="l_ml")
+                with col_ml2:
+                    anio_min_ml = st.number_input("Año mínimo de publicación:", min_value=1800, max_value=2026, value=2015, key="a_ml")
+                
+                # Spinner para el cálculo pasándole ahora el anio_min_ml
+                with st.spinner("Analizando la matriz de la red y calculando similitudes..."):
+                    df_rec_ml = obtener_recomendaciones_colaborativas(conn, biblioteca_seleccionada, limite=limite_ml, anio_minimo=anio_min_ml)
+                
+                # Renderizamos los datos FUERA del spinner
+                if not df_rec_ml.empty:
+                    # Renombramos las columnas
+                    df_rec_ml.columns = ["ID Sistema", "Título", "Autor", "Año", "CDU", "Nº de Bibliotecas Gemelas"]
+                    
+                    st.dataframe(df_rec_ml, use_container_width=True, hide_index=True)
+                    
+                    # Botón de descarga opcional
+                    csv_ml = df_rec_ml.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                    st.download_button("📥 Descargar Recomendaciones ML (CSV)", csv_ml, "recomendaciones_similitud.csv", "text/csv")
+                else:
+                    st.warning("No se encontraron recomendaciones recientes para este centro.")
