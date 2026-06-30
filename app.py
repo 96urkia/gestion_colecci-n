@@ -955,7 +955,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
         # C) RECOMENDACIONES BASADAS EN MACHINE LEARNING
         # ------------------------------------------
         with subtab_rec_ml:
-            st.subheader("🤖 Títulos Populares")
+            st.subheader("🤖 Recomendaciones basadas en similitudes con otras bibliotecas")
             
             # Definición de variables
             limite_ml = st.number_input("Límite:", min_value=5, value=20, key="l_ml_v2")
