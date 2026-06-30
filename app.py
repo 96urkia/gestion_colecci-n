@@ -317,7 +317,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
     return df_final, (len(df_topo) - len(df_final))
 
 @st.cache_data(ttl=86400)
-def obtener_recomendaciones_colaborativas(_conexion, biblioteca_objetivo, limite=20, top_vecinos=5, anio_minimo=2015):
+def obtener_recomendaciones_v2(_conexion, biblioteca_objetivo, limite=20, top_vecinos=5, anio_minimo=2015):
     biblioteca_objetivo = biblioteca_objetivo.strip().upper()
     
     try:
@@ -961,7 +961,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
             busqueda_cdu_ml = st.text_input("⌨️ Filtrar por CDU (ej: 004*):", key="b_cdu_ml")
 
             with st.spinner("Analizando similitudes..."):
-                df_rec_ml, vecinos = obtener_recomendaciones_colaborativas(conn, biblioteca_seleccionada, limite=limite_ml, anio_minimo=anio_min_ml)
+                df_rec_ml, vecinos = obtener_recomendaciones_v2(conn, biblioteca_seleccionada, limite=limite_ml, anio_minimo=anio_min_ml # Ahora sí lo reconocerá)
 
             if not df_rec_ml.empty:
                 # Mostrar Bibliotecas Similares
