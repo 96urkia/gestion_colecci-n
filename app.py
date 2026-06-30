@@ -991,34 +991,34 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
 
-         #   ------------------------------------------
-        # C) RECOMENDACIONES BASADAS EN MACHINE LEARNING
-        # ------------------------------------------
-        with subtab_rec_ml:
-            st.subheader("🤖 Títulos Populares en Centros con Colecciones Similares")
-            st.info("Este modelo detecta qué bibliotecas de la red comparten gustos o perfiles de préstamo contigo y te sugiere lo que a ellos les funciona mejor.")
+     #   ------------------------------------------
+    # C) RECOMENDACIONES BASADAS EN MACHINE LEARNING
+    # ------------------------------------------
+    with subtab_rec_ml:
+        st.subheader("🤖 Títulos Populares en Centros con Colecciones Similares")
+        st.info("Este modelo detecta qué bibliotecas de la red comparten gustos o perfiles de préstamo contigo y te sugiere lo que a ellos les funciona mejor.")
+        
+        if conn is None:
+            st.error("No hay conexión activa con la base de datos.")
+        else:
+            limite_ml = st.number_input("Número de sugerencias de ML a mostrar:", min_value=5, max_value=100, value=20, key="l_ml")
             
-            if conn is None:
-                st.error("No hay conexión activa con la base de datos.")
+            # Spinner para el cálculo
+            with st.spinner("Analizando la matriz de la red y calculando similitudes..."):
+                df_rec_ml = obtener_recomendaciones_colaborativas(conn, biblioteca_seleccionada, limite=limite_ml)
+            
+            # Renderizamos los datos FUERA del spinner
+            if not df_rec_ml.empty:
+                # Renombramos las columnas para que se vean amigables en la interfaz
+                df_rec_ml.columns = ["ID Sistema", "Título", "Autor", "Año", "CDU", "Nº de Bibliotecas Gemelas"]
+                
+                st.dataframe(df_rec_ml, use_container_width=True, hide_index=True)
+                
+                # Botón de descarga opcional
+                csv_ml = df_rec_ml.to_csv(index=False, sep=';', encoding="utf-8-sig")
+                st.download_button("📥 Descargar Recomendaciones ML (CSV)", csv_ml, "recomendaciones_similitud.csv", "text/csv")
             else:
-                limite_ml = st.number_input("Número de sugerencias de ML a mostrar:", min_value=5, max_value=100, value=20, key="l_ml")
-                
-                # Spinner para el cálculo
-                with st.spinner("Analizando la matriz de la red y calculando similitudes..."):
-                    df_rec_ml = obtener_recomendaciones_colaborativas(conn, biblioteca_seleccionada, limite=limite_ml)
-                
-                # Renderizamos los datos FUERA del spinner
-                if not df_rec_ml.empty:
-                    # Renombramos las columnas para que se vean amigables en la interfaz
-                    df_rec_ml.columns = ["ID Sistema", "Título", "Autor", "Año", "CDU", "Nº de Bibliotecas Gemelas"]
-                    
-                    st.dataframe(df_rec_ml, use_container_width=True, hide_index=True)
-                    
-                    # Botón de descarga opcional
-                    csv_ml = df_rec_ml.to_csv(index=False, sep=';', encoding="utf-8-sig")
-                    st.download_button("📥 Descargar Recomendaciones ML (CSV)", csv_ml, "recomendaciones_similitud.csv", "text/csv")
-                else:
-                    st.warning("No se encontraron centros lo suficientemente similares o no hay nuevas sugerencias para tu colección.")
+                st.warning("No se encontraron centros lo suficientemente similares o no hay nuevas sugerencias para tu colección.")
 
                         
                                 
