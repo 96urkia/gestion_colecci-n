@@ -14,15 +14,6 @@ if 'analizado' not in st.session_state:
     st.session_state['analizado'] = False
 if 'resultado' not in st.session_state:
     st.session_state['resultado'] = None
-if 'idioma' not in st.session_state:
-    st.session_state.idioma = 'ES'  # Español por defecto
-
-# ==========================================
-# FUNCIÓN DE TRADUCCIÓN
-# ==========================================
-def t(texto_es: str, texto_eu: str) -> str:
-    """Función simple para cambiar entre Español y Euskera"""
-    return texto_es if st.session_state.idioma == 'ES' else texto_eu
 
 # ==========================================
 # CONFIGURACIÓN DE BASE DE DATOS
@@ -45,18 +36,14 @@ def asegurar_base_de_datos():
         debe_descargar = True
 
     if debe_descargar:
-        with st.spinner("Descargando base de datos de la colección (500MB)... Esto puede tardar un minuto la primera vez.",
-                       "Bildumaren datu-basea deskargatzen (500MB)... Lehen aldiz minutu bat iraun dezake."):
+        with st.spinner("Descargando base de datos de la colección (500MB)... Esto puede tardar un minuto la primera vez."):
             try:
                 # Al ir con dl=1, urlretrieve descargará los ~500MB reales directamente al disco
                 urllib.request.urlretrieve(DB_URL, DB_PATH)
-                st.toast("¡Base de datos descargada con éxito!", icon="📥, "Datu-basea ondo deskargatu da!"), icon="📥"")
+                st.toast("¡Base de datos descargada con éxito!", icon="📥")
                 return True
             except Exception as e:
-                st.error(t(
-                    f"Error crítico al descargar la base de datos desde Dropbox: {e}",
-                    f"Errore kritikoa datu-basea Dropbox-etik deskargatzean: {e}"
-                ))
+                st.error(f"Error crítico al descargar la base de datos desde Dropbox: {e}")
                 return False
     return True
 
@@ -68,8 +55,7 @@ if asegurar_base_de_datos():
     conn = sqlite3.connect(DB_PATH)
 else:
     conn = None
-    st.error("No se pudo establecer la conexión porque falló la preparación del archivo .db",
-            "Ezin izan da konexioa ezarri .db fitxategiaren prestaketa huts egin duelako")
+    st.error("No se pudo establecer la conexión porque falló la preparación del archivo .db")
 
 @st.cache_resource
 def obtener_conexion_db():
@@ -85,7 +71,7 @@ def obtener_conexion_db():
 if asegurar_base_de_datos():
     conn = obtener_conexion_db()
     if conn is None:
-        st.error("Error al conectar con el archivo SQLite.", "Errorea SQLite fitxategiarekin konektatzean.")
+        st.error("Error al conectar con el archivo SQLite.")
 else:
     conn = None
 
@@ -97,14 +83,11 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
     if isinstance(bibliotecas, str):
         bibliotecas = [bibliotecas]
     elif not isinstance(bibliotecas, (list, tuple)):
-        st.error(t(
-            f"❌ 'bibliotecas' debe ser texto o lista. Recibí: {type(bibliotecas)}",
-            f"❌ 'bibliotecas' testua edo zerrenda izan behar du. Jasota: {type(bibliotecas)}"
-        ))
+        st.error(f"❌ 'bibliotecas' debe ser texto o lista. Recibí: {type(bibliotecas)}")
         return pd.DataFrame()
    
     if not bibliotecas:
-        st.error(t("❌ Debes indicar al menos una biblioteca.", "❌ Gutxienez liburutegi bat adierazi behar duzu."))
+        st.error("❌ Debes indicar al menos una biblioteca.")
         return pd.DataFrame()
    
     placeholders = ','.join(['?'] * len(bibliotecas))
@@ -132,8 +115,10 @@ def obtener_recomendaciones_automaticas(conexion, bibliotecas, limite=50):
         df = pd.read_sql_query(query, conexion, params=params)
         return df
     except Exception as e:
-        st.error(t(f"❌ Error en la consulta SQL: {str(e)}", f"❌ SQL kontsultan errorea: {str(e)}"))
+        st.error(f"❌ Error en la consulta SQL: {str(e)}")
         return pd.DataFrame()
+
+import pandas as pd
 
 def obtener_recomendaciones_por_materia_avanzada(conexion, biblioteca, patron_regex, anios, min_ejemplares, limite):
     """
@@ -191,7 +176,7 @@ def obtener_recomendaciones_por_materia_avanzada(conexion, biblioteca, patron_re
         return df_resultado
         
     except Exception as e:
-        print(t(f"❌ Error en la consulta analítica por materias: {e}", f"❌ Materien bilaketetan errorea: (e)}"))
+        print(f"Error en la consulta analítica por materias: {e}")
         return pd.DataFrame()
         
 # ==========================================
@@ -242,7 +227,7 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
         signatura = sign_match.group(1).strip() if sign_match else line
        
         title_match = re.search(r'\d{7,}\s+(.{10,})', line)
-        title = title_match.group(1).strip() if title_match else t("Título no detectado", "Izenburua ez da detektatu")
+        title = title_match.group(1).strip() if title_match else "Título no detectado"
        
         data.append({
             "record_id": record_id,
