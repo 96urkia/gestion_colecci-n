@@ -388,10 +388,10 @@ with st.sidebar:
 
     if not st.session_state['analizado']:
         st.header("📂 2. Carga de Archivos")
-        uploaded_topo = st.file_uploader("Archivo Topográfico (.txt) *Requerido*", type=["txt"])
+        uploaded_topo = st.file_uploader("Catálogo - Ejemplares - Listados- 01 Listado Topográfico(.txt) *Requerido*", type=["txt"])
         uploaded_catalogo = st.file_uploader("Catálogo Completo (.txt) *Requerido*", type=["txt"])
-        uploaded_nunca = st.file_uploader("No Prestados (.txt)", type=["txt"])
-        uploaded_mas2 = st.file_uploader("Más Prestados (.txt)", type=["txt"])
+        uploaded_nunca = st.file_uploader("Catálogo - Ejemplares - Listados- 05 Listado topográfico de ejemplares no prestados (.txt)", type=["txt"])
+        uploaded_mas2 = st.file_uploader("Catálogo - Ejemplares - Listados- 09 Listado topográfico de ejemplares más prestados (.txt)", type=["txt"])
 
         st.markdown("---")
         
