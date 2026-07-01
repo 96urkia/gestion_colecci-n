@@ -782,8 +782,7 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     with pestana_compras:
         subtab_rec_gen, subtab_rec_cdu, subtab_rec_ml = st.tabs([
             "🌐 A) Recomendaciones Generales", 
-            "📚 B) Recomendaciones por CDU",
-            "🤖 C) Sugerencias por Centros Similares (ML)"
+            "📚 B) Recomendaciones por CDU"
         ])
         
         # A) RECOMENDACIONES GENERALES
@@ -951,29 +950,4 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
 
-   # ------------------------------------------
-        # C) RECOMENDACIONES BASADAS EN MACHINE LEARNING
-        # ------------------------------------------
-        with subtab_rec_ml:
-            st.subheader("🤖 Recomendaciones basadas en similitudes con otras bibliotecas")
-            
-            # Definición de variables
-            limite_ml = st.number_input("Límite:", min_value=5, value=20, key="l_ml_v2")
-            anio_min_ml = st.number_input("Año min:", min_value=1800, value=2015, key="a_ml_v2")
-            busqueda_cdu_ml = st.text_input("Filtro CDU:", key="b_cdu_ml_v2")
-
-            # Llamada única
-            with st.spinner("Analizando..."):
-                # Asegúrate que el nombre coincide EXACTAMENTE con la 'def'
-                df_rec_ml, vecinos = obtener_recomendaciones_v2(
-                    conn, 
-                    biblioteca_seleccionada, 
-                    limite=limite_ml, 
-                    anio_minimo=anio_min_ml
-                )
-
-            if not df_rec_ml.empty:
-                st.write(f"Bibliotecas gemelas: {', '.join(vecinos)}")
-                st.dataframe(df_rec_ml)
-            else:
-                st.warning("Sin datos.")
+ 
