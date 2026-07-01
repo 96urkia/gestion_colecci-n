@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import re
 import plotly.express as px
+from sklearn.metrics.pairwise import cosine_similarity
 
 # ==========================================
 # INICIALIZACIÓN DE ESTADOS DE SESIÓN
@@ -314,6 +315,50 @@ def procesar_datos(topo_bytes, nunca_bytes, mas2_bytes, catalogo_bytes, tipo_ana
 
     df_final['categoria'] = df_final['signatura_real'].apply(clasificar_dinamico)
     return df_final, (len(df_topo) - len(df_final))
+
+@st.cache_data(ttl=86400)
+def obtener_recomendaciones_v2(_conexion, biblioteca_objetivo, limite=20, top_vecinos=5, anio_minimo=2015):
+    biblioteca_objetivo = biblioteca_objetivo.strip().upper()
+    
+    try:
+        # 1. Matriz de interacciones
+        query_matriz = "SELECT DISTINCT UPPER(TRIM(biblioteca)) as biblioteca, id_sistema FROM ejemplares WHERE biblioteca IS NOT NULL"
+        df_interacciones = pd.read_sql_query(query_matriz, _conexion)
+        df_interacciones['tiene'] = 1
+        matriz = df_interacciones.pivot(index='biblioteca', columns='id_sistema', values='tiene').fillna(0)
+        
+        if biblioteca_objetivo not in matriz.index:
+            return pd.DataFrame(), []
+            
+        # 2. Similitud
+        similitudes = cosine_similarity(matriz)
+        df_similitud = pd.DataFrame(similitudes, index=matriz.index, columns=matriz.index)
+        
+        # Obtener nombres de las bibliotecas similares (las "gemelas")
+        similares = df_similitud[biblioteca_objetivo].drop(biblioteca_objetivo)
+        top_vecinos_data = similares.nlargest(top_vecinos)
+        nombres_vecinos = top_vecinos_data.index.tolist()
+        
+        # 3. Recomendaciones
+        mis_libros = set(df_interacciones[df_interacciones['biblioteca'] == biblioteca_objetivo]['id_sistema'])
+        libros_vecinos = df_interacciones[df_interacciones['biblioteca'].isin(nombres_vecinos)]
+        recomendaciones_potenciales = libros_vecinos[~libros_vecinos['id_sistema'].isin(mis_libros)]
+        
+        conteo_rec = recomendaciones_potenciales.groupby('id_sistema').size().reset_index(name='coincidencias')
+        
+        # 4. Metadata y Filtro de Año
+        query_libros = "SELECT id_sistema, titulo, autor, anio, cdu FROM libros WHERE CAST(COALESCE(anio, 0) AS INTEGER) >= ?"
+        df_libros_validos = pd.read_sql_query(query_libros, _conexion, params=[int(anio_minimo)])
+        
+        df_final = pd.merge(conteo_rec, df_libros_validos, on='id_sistema', how='inner')
+        df_final = df_final.sort_values('coincidencias', ascending=False).head(limite)
+        
+        return df_final, nombres_vecinos
+        
+    except Exception as e:
+        return pd.DataFrame(), []
+
+
 
 # ==========================================
 # ESTILOS E INTERFAZ BASE
@@ -735,9 +780,10 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
     # BLOQUE 2: RECOMENDACIONES DE COMPRA
     # ==========================================
     with pestana_compras:
-        subtab_rec_gen, subtab_rec_cdu = st.tabs([
+        subtab_rec_gen, subtab_rec_cdu, subtab_rec_ml = st.tabs([
             "🌐 A) Recomendaciones Generales", 
-            "📚 B) Recomendaciones por CDU"
+            "📚 B) Recomendaciones por CDU",
+            "🤖 C) Sugerencias por Centros Similares (ML)"
         ])
         
         # A) RECOMENDACIONES GENERALES
@@ -904,5 +950,30 @@ if st.session_state['analizado'] and st.session_state['resultado'] is not None:
                                     hay_inf = True
                                     with st.expander(f"{titulo_ex} ({len(g)} ítems)"):
                                         st.dataframe(g[["titulo", "autor", "anio", "cdu", "id_red_bibliotecas"]], use_container_width=True, hide_index=True)
-                            
-                            if not hay_inf: st.info("No hay sugerencias infantiles con este filtro.")
+
+   # ------------------------------------------
+        # C) RECOMENDACIONES BASADAS EN MACHINE LEARNING
+        # ------------------------------------------
+        with subtab_rec_ml:
+            st.subheader("🤖 Recomendaciones basadas en similitudes con otras bibliotecas")
+            
+            # Definición de variables
+            limite_ml = st.number_input("Límite:", min_value=5, value=20, key="l_ml_v2")
+            anio_min_ml = st.number_input("Año min:", min_value=1800, value=2015, key="a_ml_v2")
+            busqueda_cdu_ml = st.text_input("Filtro CDU:", key="b_cdu_ml_v2")
+
+            # Llamada única
+            with st.spinner("Analizando..."):
+                # Asegúrate que el nombre coincide EXACTAMENTE con la 'def'
+                df_rec_ml, vecinos = obtener_recomendaciones_v2(
+                    conn, 
+                    biblioteca_seleccionada, 
+                    limite=limite_ml, 
+                    anio_minimo=anio_min_ml
+                )
+
+            if not df_rec_ml.empty:
+                st.write(f"Bibliotecas gemelas: {', '.join(vecinos)}")
+                st.dataframe(df_rec_ml)
+            else:
+                st.warning("Sin datos.")
